@@ -162,7 +162,7 @@ class ModelSpec:
 
 configs = {
     "flux-dev": ModelSpec(
-        repo_id="black-forest-labs/FLUX.1-dev",
+        repo_id="../fshare/models/black-forest-labs/FLUX.1-dev",
         repo_id_ae="black-forest-labs/FLUX.1-dev",
         repo_flow="flux1-dev.safetensors",
         repo_ae="ae.safetensors",
@@ -195,7 +195,7 @@ configs = {
         ),
     ),
     "flux-dev-fp8": ModelSpec(
-        repo_id="XLabs-AI/flux-dev-fp8",
+        repo_id="../fshare/models/XLabs-AI/flux-dev-fp8",
         repo_id_ae="black-forest-labs/FLUX.1-dev",
         repo_flow="flux-dev-fp8.safetensors",
         repo_ae="ae.safetensors",
@@ -228,7 +228,7 @@ configs = {
         ),
     ),
     "flux-schnell": ModelSpec(
-        repo_id="black-forest-labs/FLUX.1-schnell",
+        repo_id="../fshare/models/black-forest-labs/FLUX.1-schnell",
         repo_id_ae="black-forest-labs/FLUX.1-dev",
         repo_flow="flux1-schnell.safetensors",
         repo_ae="ae.safetensors",
@@ -275,7 +275,7 @@ def print_load_warning(missing: list[str], unexpected: list[str]) -> None:
 
 def load_from_repo_id(repo_id, checkpoint_name):
     ckpt_path = hf_hub_download(repo_id, checkpoint_name)
-    sd = load_sft(ckpt_path, device='cpu')
+    sd = load_sft(ckpt_path, device="cpu")
     return sd
 
 def load_flow_model(name: str, device: str | torch.device = "cuda", hf_download: bool = True):
@@ -335,14 +335,15 @@ def load_flow_model_quintized(name: str, device: str | torch.device = "cuda", hf
         and hf_download
     ):
         ckpt_path = hf_hub_download(configs[name].repo_id, configs[name].repo_flow)
-    json_path = hf_hub_download(configs[name].repo_id, 'flux_dev_quantization_map.json')
-
+    # json_path = hf_hub_download(configs[name].repo_id, 'flux_dev_quantization_map.json')
+    json_path = "../fshare/models/XLabs-AI/flux-dev-fp8/flux_dev_quantization_map.json"
 
     model = Flux(configs[name].params).to(torch.bfloat16)
 
     print("Loading checkpoint")
     # load_sft doesn't support torch.device
-    sd = load_sft(ckpt_path, device='cpu')
+    print(device)
+    sd = load_sft(ckpt_path,device='cpu')
     with open(json_path, "r") as f:
         quantization_map = json.load(f)
     print("Start a quantization process...")
@@ -359,10 +360,10 @@ def load_controlnet(name, device, transformer=None):
 
 def load_t5(device: str | torch.device = "cuda", max_length: int = 512) -> HFEmbedder:
     # max length 64, 128, 256 and 512 should work (if your sequence is short enough)
-    return HFEmbedder("xlabs-ai/xflux_text_encoders", max_length=max_length, torch_dtype=torch.bfloat16).to(device)
+    return HFEmbedder("../fshare/models/xlabs-ai/xflux_text_encoders", max_length=max_length, torch_dtype=torch.bfloat16).to(device)
 
 def load_clip(device: str | torch.device = "cuda") -> HFEmbedder:
-    return HFEmbedder("openai/clip-vit-large-patch14", max_length=77, torch_dtype=torch.bfloat16).to(device)
+    return HFEmbedder("../fshare/models/openai/clip-vit-large-patch14", max_length=77, torch_dtype=torch.bfloat16).to(device)
 
 
 def load_ae(name: str, device: str | torch.device = "cuda", hf_download: bool = True) -> AutoEncoder:
@@ -381,6 +382,7 @@ def load_ae(name: str, device: str | torch.device = "cuda", hf_download: bool = 
         ae = AutoEncoder(configs[name].ae_params)
 
     if ckpt_path is not None:
+        # print(device)
         sd = load_sft(ckpt_path, device=str(device))
         missing, unexpected = ae.load_state_dict(sd, strict=False, assign=True)
         print_load_warning(missing, unexpected)

@@ -42,8 +42,8 @@ class XFluxPipeline:
         else:
             self.model = load_flow_model(model_type, device="cpu" if offload else self.device)
 
-        self.image_encoder_path = "openai/clip-vit-large-patch14"
-        self.hf_lora_collection = "XLabs-AI/flux-lora-collection"
+        self.image_encoder_path = "../fshare/models/openai/clip-vit-large-patch14"
+        self.hf_lora_collection = "../fshare/models/XLabs-AI/flux-lora-collection"
         self.lora_types_to_names = {
             "realism": "lora.safetensors",
         }
