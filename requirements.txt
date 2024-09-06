@@ -4,7 +4,7 @@ deepspeed==0.14.4
 einops==0.8.0
 transformers==4.43.3
 huggingface-hub==0.24.5
-optimum-quanto==0.2.2
+optimum-quanto==0.2.4
 datasets
 omegaconf
 diffusers

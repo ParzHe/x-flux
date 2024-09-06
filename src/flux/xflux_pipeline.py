@@ -211,7 +211,7 @@ class XFluxPipeline:
     def gradio_generate(self, prompt, image_prompt, controlnet_image, width, height, guidance,
                         num_steps, seed, true_gs, ip_scale, neg_ip_scale, neg_prompt,
                         neg_image_prompt, timestep_to_start_cfg, control_type, control_weight,
-                        lora_weight, local_path, lora_local_path, ip_local_path):
+                        lora_weight, local_path, lora_local_path, ip_local_path, output_dir):
         if controlnet_image is not None:
             controlnet_image = Image.fromarray(controlnet_image)
             if ((self.controlnet_loaded and control_type != self.control_type)
@@ -242,7 +242,7 @@ class XFluxPipeline:
                    num_steps, seed, true_gs, control_weight, ip_scale, neg_ip_scale, neg_prompt,
                    neg_image_prompt, timestep_to_start_cfg)
 
-        filename = f"output/gradio/{uuid.uuid4()}.jpg"
+        filename = f"{output_dir}/{uuid.uuid4()}.jpg"
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         exif_data = Image.Exif()
         exif_data[ExifTags.Base.Make] = "XLabs AI"

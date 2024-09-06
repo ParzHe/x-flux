@@ -23,6 +23,7 @@ from .annotator.midas import MidasDetector
 from .annotator.hed import HEDdetector
 from .annotator.tile import TileDetector
 
+import gradio as gr
 
 def load_safetensors(path):
     tensors = {}
@@ -280,7 +281,8 @@ def load_from_repo_id(repo_id, checkpoint_name):
 
 def load_flow_model(name: str, device: str | torch.device = "cuda", hf_download: bool = True):
     # Loading Flux
-    print("Init model")
+    print(f"Init model on {device}")
+    # gr.Info(f"在{device}上初始化了模型")
     ckpt_path = configs[name].ckpt_path
     if (
         ckpt_path is None
@@ -295,6 +297,7 @@ def load_flow_model(name: str, device: str | torch.device = "cuda", hf_download:
 
     if ckpt_path is not None:
         print(f"Loading checkpoint on {device}")
+        # gr.Info(f"在{device}上加载了模型")
         # load_sft doesn't support torch.device
         sd = load_sft(ckpt_path, device=str(device))
         missing, unexpected = model.load_state_dict(sd, strict=False, assign=True)
@@ -303,7 +306,8 @@ def load_flow_model(name: str, device: str | torch.device = "cuda", hf_download:
 
 def load_flow_model2(name: str, device: str | torch.device = "cuda", hf_download: bool = True):
     # Loading Flux
-    print("Init model")
+    print(f"Init model on {device}")
+    # gr.Info(f"在{device}上初始化了模型")
     ckpt_path = configs[name].ckpt_path
     if (
         ckpt_path is None
@@ -317,7 +321,8 @@ def load_flow_model2(name: str, device: str | torch.device = "cuda", hf_download
         model = Flux(configs[name].params)
 
     if ckpt_path is not None:
-        print("Loading checkpoint")
+        print(f"Loading checkpoint on {device}")
+        # gr.Info(f"在{device}上加载了了模型")
         # load_sft doesn't support torch.device
         sd = load_sft(ckpt_path, device=str(device))
         missing, unexpected = model.load_state_dict(sd, strict=False, assign=True)
@@ -326,7 +331,8 @@ def load_flow_model2(name: str, device: str | torch.device = "cuda", hf_download
 
 def load_flow_model_quintized(name: str, device: str | torch.device = "cuda", hf_download: bool = True):
     # Loading Flux
-    print("Init model")
+    print(f"Init model on {device}")
+    # gr.Info(f"在{device}上初始化了模型")
     ckpt_path = configs[name].ckpt_path
     if (
         ckpt_path is None
@@ -340,9 +346,9 @@ def load_flow_model_quintized(name: str, device: str | torch.device = "cuda", hf
 
     model = Flux(configs[name].params).to(torch.bfloat16)
 
-    print("Loading checkpoint")
+    print(f"Loading checkpoint on {device}")
+    # gr.Info(f"在{device}上加载了模型")
     # load_sft doesn't support torch.device
-    print(device)
     sd = load_sft(ckpt_path,device='cpu')
     with open(json_path, "r") as f:
         quantization_map = json.load(f)
@@ -376,7 +382,8 @@ def load_ae(name: str, device: str | torch.device = "cuda", hf_download: bool = 
         ckpt_path = hf_hub_download(configs[name].repo_id_ae, configs[name].repo_ae)
 
     # Loading the autoencoder
-    print("Init AE")
+    print(f"Init AE on {device}")
+    # gr.Info(f"在{device}上初始化了AE")
     with torch.device("meta" if ckpt_path is not None else device):
         ae = AutoEncoder(configs[name].ae_params)
 
