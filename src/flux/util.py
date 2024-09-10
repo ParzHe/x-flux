@@ -163,7 +163,7 @@ class ModelSpec:
 
 configs = {
     "flux-dev": ModelSpec(
-        repo_id="../fshare/models/black-forest-labs/FLUX.1-dev",
+        repo_id="black-forest-labs/FLUX.1-dev",
         repo_id_ae="black-forest-labs/FLUX.1-dev",
         repo_flow="flux1-dev.safetensors",
         repo_ae="ae.safetensors",
@@ -196,7 +196,7 @@ configs = {
         ),
     ),
     "flux-dev-fp8": ModelSpec(
-        repo_id="../fshare/models/XLabs-AI/flux-dev-fp8",
+        repo_id="black-forest-labs/FLUX.1-dev",
         repo_id_ae="black-forest-labs/FLUX.1-dev",
         repo_flow="flux-dev-fp8.safetensors",
         repo_ae="ae.safetensors",
@@ -229,7 +229,7 @@ configs = {
         ),
     ),
     "flux-schnell": ModelSpec(
-        repo_id="../fshare/models/black-forest-labs/FLUX.1-schnell",
+        repo_id="black-forest-labs/FLUX.1-dev",
         repo_id_ae="black-forest-labs/FLUX.1-dev",
         repo_flow="flux1-schnell.safetensors",
         repo_ae="ae.safetensors",

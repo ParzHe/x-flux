@@ -209,10 +209,13 @@ class XFluxPipeline:
 
     @torch.inference_mode()
     def gradio_generate(self, prompt, image_prompt, controlnet_image, width, height, guidance,
-                        num_steps, seed, true_gs, ip_scale, neg_ip_scale, neg_prompt,
-                        neg_image_prompt, timestep_to_start_cfg, control_type, control_weight,
-                        lora_weight, local_path, lora_local_path, ip_local_path, output_dir):
-        if controlnet_image is not None:
+                        num_steps, seed, true_gs, 
+                        is_ip_enable, ip_scale, neg_ip_scale, neg_prompt,
+                        neg_image_prompt, timestep_to_start_cfg, 
+                        is_contronet_enable, control_type, control_weight,
+                        is_lora_enable, lora_weight, local_path, lora_local_path, ip_local_path, output_dir,
+                    ):
+        if controlnet_image is not None and is_contronet_enable:
             controlnet_image = Image.fromarray(controlnet_image)
             if ((self.controlnet_loaded and control_type != self.control_type)
                 or not self.controlnet_loaded):
@@ -222,9 +225,9 @@ class XFluxPipeline:
                     self.set_controlnet(control_type, local_path=None,
                                         repo_id=f"xlabs-ai/flux-controlnet-{control_type}-v3",
                                         name=f"flux-{control_type}-controlnet-v3.safetensors")
-        if lora_local_path is not None:
+        if lora_local_path is not None and is_lora_enable:
             self.set_lora(local_path=lora_local_path, lora_weight=lora_weight)
-        if image_prompt is not None:
+        if image_prompt is not None and is_ip_enable:
             image_prompt = Image.fromarray(image_prompt)
             if neg_image_prompt is not None:
                 neg_image_prompt = Image.fromarray(neg_image_prompt)
