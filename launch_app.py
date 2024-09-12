@@ -13,5 +13,7 @@ if __name__ == "__main__":
     if gpu_mem_total > 35:
         cmd="python gradio_demo.py --port 1024 --name flux-dev --ckpt_dir ../fssd/models --output_dir ../fssd/output"
     else: 
-        cmd="pyhton gradio_demo.py --port 1024 --name flux-dev --offload --ckpt_dir ../fssd/models --output_dir ../fssd/output"
+        print("显存不足以载入Flux-dev生图所需的所有模型在GPU中，自动以低显存模式启动...")
+        cmd="python gradio_demo.py --port 1024 --name flux-dev --offload --ckpt_dir ../fssd/models --output_dir ../fssd/output"
+    
     os.system(cmd)
