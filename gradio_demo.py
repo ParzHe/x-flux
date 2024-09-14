@@ -12,7 +12,7 @@ from src.flux.xflux_pipeline import XFluxPipeline
 
 import time
 
-from src.utils import get_gpu_mem_info
+from src.utils import get_gpu_mem_info, flush
 
 def list_dirs(path):
     if path is None or path == "None" or path == "":
@@ -110,7 +110,7 @@ def start_lora_training(
 
 def init_pipeline(model_type, device, offload):
     print("初始化Pipeline中...")
-    torch.cuda.empty_cache()
+    flush()
     pipeline=XFluxPipeline(model_type, device, offload)
     print("初始化Pipeline完成")
     steps=0
@@ -134,7 +134,7 @@ class casdao_xflux_ui:
         
         self.gpu_mem_total, self.gpu_mem_used, self.gpu_mem_free = get_gpu_mem_info(gpu_id=0)
         
-        if self.gpu_mem_total> 35:
+        if self.gpu_mem_total> 25:
             self.model_list=["flux-dev","flux-schnell"]
         else:
             self.model_list=["flux-dev","flux-dev-fp8","flux-schnell"]
@@ -198,12 +198,15 @@ class casdao_xflux_ui:
                 """
             )
             with gr.Row():
-                model_checkpoint=gr.Dropdown(label="模型（Checkpoint）",choices=self.model_list,value=self.model_type,scale=5)
-                device_dropdown=gr.Dropdown(label="设备（Device）",choices=["cpu","cuda"],value=self.device,visible=False,scale=0,allow_custom_value=True)
-                offload_checkbox=gr.Checkbox(label="降低负载（Offload）",
-                                            info="4090及以下的显卡不使用FP8模型时一定要勾选！",
-                                            value=self.offload,scale=2,container=True,
-                                            visible = False)
+                model_checkpoint=gr.Dropdown(label="模型（Checkpoint）",choices=self.model_list,value=self.model_type,scale=5, interactive=True if self.gpu_mem_total>25 else False)
+                device_dropdown=gr.Dropdown(label="设备（Device）",choices=["cpu","cuda"],value=self.device,visible=False, scale=0,allow_custom_value=True)
+                offload_checkbox=gr.Checkbox(label="低内存模式（Offload for Low VRAM）",
+                                            # info="4090及以下的显卡不使用FP8模型时一定要勾选！",
+                                            value=self.offload,
+                                            scale=1,
+                                            container=True,
+                                            interactive= False,
+                                            visible = False if self.gpu_mem_total>25 else True)
                 
             with gr.Tab("推理（Inference）"):
                 with gr.Row():
@@ -307,7 +310,7 @@ class casdao_xflux_ui:
                         guidance=3.5
                     
                     if self.gpu_mem_total < 35 and model_type == "flux-dev-fp8":
-                        return model_type, device, gr.update(visible=True), steps, guidance
+                        return model_type, device, False, steps, guidance
                     elif self.gpu_mem_total < 35:
                         return model_type, device, True, steps, guidance
                     else: 
@@ -324,7 +327,7 @@ class casdao_xflux_ui:
                     
                     gr.Info("开始生成...",duration=5)
                     print("开始生成...")
-                    torch.cuda.reset_peak_memory_stats()
+                    flush()
                     start_time = time.time()
                     
                     img,filename = self.pipeline.gradio_generate(prompt, image_prompt, 
@@ -360,7 +363,7 @@ class casdao_xflux_ui:
                         is_contronet_enable, control_type, control_weight,
                         is_lora_enable, lora_weight, 
                         local_path, lora_local_path, ip_local_path, output_dir
-                        ]
+                ]
                 
                 generate_btn.click(
                     fn=generate,

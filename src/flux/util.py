@@ -23,7 +23,7 @@ from .annotator.midas import MidasDetector
 from .annotator.hed import HEDdetector
 from .annotator.tile import TileDetector
 
-import gradio as gr
+import gc
 
 def load_safetensors(path):
     tensors = {}
@@ -349,7 +349,7 @@ def load_flow_model_quintized(name: str, device: str | torch.device = "cuda", hf
     print(f"Loading checkpoint on {device}")
     # gr.Info(f"在{device}上加载了模型")
     # load_sft doesn't support torch.device
-    sd = load_sft(ckpt_path,device='cpu')
+    sd = load_sft(ckpt_path, device='cpu')
     with open(json_path, "r") as f:
         quantization_map = json.load(f)
     print("Start a quantization process...")
@@ -366,9 +366,11 @@ def load_controlnet(name, device, transformer=None):
 
 def load_t5(device: str | torch.device = "cuda", max_length: int = 512) -> HFEmbedder:
     # max length 64, 128, 256 and 512 should work (if your sequence is short enough)
+    print("init T5 ...")
     return HFEmbedder("../fshare/models/XLabs-AI/xflux_text_encoders", max_length=max_length, torch_dtype=torch.bfloat16).to(device)
 
 def load_clip(device: str | torch.device = "cuda") -> HFEmbedder:
+    print("Init clip ...")
     return HFEmbedder("../fshare/models/openai/clip-vit-large-patch14", max_length=77, torch_dtype=torch.bfloat16).to(device)
 
 def load_ae(name: str, device: str | torch.device = "cuda", hf_download: bool = True) -> AutoEncoder:
