@@ -31,6 +31,12 @@ def flush():
     torch.cuda.reset_max_memory_allocated()
     torch.cuda.reset_peak_memory_stats()
 
+def flush_without_peak():
+    gc.collect()
+    torch.cuda.empty_cache()
+    torch.cuda.reset_max_memory_allocated()
+    # torch.cuda.reset_peak_memory_stats()
+
 def save_images(images,timestamp,output_folder):  
     output_folder = output_folder
     onetime_output_folder = os.path.join(output_folder,timestamp)
@@ -75,7 +81,8 @@ def save_images_with_prompt(
         output_folder (str): The folder of the output files.
 
     Returns:
-        save
+        iamges (PIL): The images data.
+        save_paths (sta): Saved paths of the iamges
     """
     
     params = {
@@ -86,7 +93,7 @@ def save_images_with_prompt(
         'width': width,
         'height': height,
         'num_inference_steps': num_inference_steps,
-        'max_memory_usage': f"{max_memory_usage} MB",
+        'max_memory_usage': f"{max_memory_usage} GB",
         'generation_time': f"{generation_time} s",
     }
     

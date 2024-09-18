@@ -9,6 +9,7 @@ import torch
 import gradio as gr
 
 from src.flux.xflux_pipeline import XFluxPipeline
+from src.flux.diffusers_pipeline import DiffusersFluxPipeline
 
 import time
 
@@ -108,10 +109,13 @@ def start_lora_training(
 
     return result
 
-def init_pipeline(model_type, device, offload):
+def init_pipeline(pipeline_type: str = "xflux", model_type: str = "flux-dev", device: str | torch.device = "cuda", offload: bool = False):
     print("初始化Pipeline中...")
     flush()
-    pipeline=XFluxPipeline(model_type, device, offload)
+    if pipeline_type == "xflux":
+        pipeline=XFluxPipeline(model_type, device, offload)
+    else:
+        pipeline=DiffusersFluxPipeline(model_type,device,offload)
     print("初始化Pipeline完成")
     steps=0
     guidance=0
@@ -124,8 +128,10 @@ def init_pipeline(model_type, device, offload):
     return pipeline, steps, guidance
 
 class casdao_xflux_ui:
-    def __init__(self,model_type: str, device: str, offload: bool = False, 
+    def __init__(self, pipeline_type: str, model_type: str, device: str, offload: bool = False, 
                  ckpt_dir: str="", output_path: str = ""):
+        
+        self.pipeline_type=pipeline_type
         self.device = torch.device(device)
         self.offload = offload
         self.model_type = model_type
@@ -134,6 +140,7 @@ class casdao_xflux_ui:
         
         self.gpu_mem_total, self.gpu_mem_used, self.gpu_mem_free = get_gpu_mem_info(gpu_id=0)
         
+        self.pipeline_list=["xflux","diffusers"]
         if self.gpu_mem_total> 25:
             self.model_list=["flux-dev","flux-schnell"]
         else:
@@ -198,6 +205,7 @@ class casdao_xflux_ui:
                 """
             )
             with gr.Row():
+                pipeline_dropdown=gr.Dropdown(label="推理管线（Pipeline）",choices=self.pipeline_list,value=self.pipeline_type)
                 model_checkpoint=gr.Dropdown(label="模型（Checkpoint）",choices=self.model_list,value=self.model_type,scale=5, interactive=True if self.gpu_mem_total>25 else False)
                 device_dropdown=gr.Dropdown(label="设备（Device）",choices=["cpu","cuda"],value=self.device,visible=False, scale=0,allow_custom_value=True)
                 offload_checkbox=gr.Checkbox(label="低内存模式（Offload for Low VRAM）",
@@ -295,12 +303,15 @@ class casdao_xflux_ui:
                         max_vram = gr.Textbox(label="生成时峰值显存占用（Maximum Useed VRAM）",value=f"无生成，无数据")
                 
                 
-                def update_pipeline(model_type, device, offload):
-                    gr.Info("切换Flux模型中...",duration=5)
-                    self.pipeline=None
+                def update_pipeline(pipeline_type, model_type, device, offload):
+                    gr.Info("切换Flux管线/模型中...",duration=5)
+                    del self.pipeline
                     torch.cuda.empty_cache()
-                    self.pipeline=XFluxPipeline(model_type, device, offload)
-                    gr.Info("切换Flux模型完成！",duration=2)
+                    if pipeline_type=="xflux":
+                        self.pipeline=XFluxPipeline(model_type, device, offload)
+                    else:
+                        self.pipeline=DiffusersFluxPipeline(model_type,device,offload)
+                    gr.Info("切换Flux管线/模型完成！",duration=2)
                     
                     if model_type == "flux-schnell":
                         steps=4
@@ -349,7 +360,7 @@ class casdao_xflux_ui:
                     return img,filename,max_vram_used,"生成（Generate）"
                 
                 gr.on(
-                    triggers=[model_checkpoint.change,offload_checkbox.change],
+                    triggers=[pipeline_dropdown.change,model_checkpoint.change,offload_checkbox.change],
                     fn=update_pipeline,
                     inputs=[model_checkpoint,device_dropdown,offload_checkbox],
                     outputs=[model_checkpoint,device_dropdown,offload_checkbox,num_steps,true_gs],
@@ -403,12 +414,14 @@ if __name__ == "__main__":
     parser.add_argument("--port",type=int, default=7860,help="The server port of the gradio demo")
     parser.add_argument("--ckpt_dir", type=str, default=".", help="Folder with checkpoints in safetensors format")
     parser.add_argument("--output_dir", type=str, default="./output/gradio", help="Folder of output frome inference")
-    
+    parser.add_argument("--pipeline",type=str,default="xflux",help="Pipeline of Flux in inference")
     args = parser.parse_args()
 
-    ui = casdao_xflux_ui(model_type=args.name,
-                   device=args.device,
-                   offload=args.offload,
-                   ckpt_dir=args.ckpt_dir, 
-                   output_path=args.output_dir,)
+    ui = casdao_xflux_ui(
+        pipeline_type=args.pipeline,
+        model_type=args.name,
+        device=args.device,
+        offload=args.offload,
+        ckpt_dir=args.ckpt_dir, 
+        output_path=args.output_dir,)
     ui.create_demo().launch(share=args.share,server_name="0.0.0.0",server_port=args.port)

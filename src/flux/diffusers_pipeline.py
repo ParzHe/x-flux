@@ -1,4 +1,6 @@
+import datetime
 import os
+import time
 import torch
 import gradio as gr
 
@@ -11,7 +13,7 @@ from transformers import T5EncoderModel, T5TokenizerFast, CLIPTokenizer, CLIPTex
 from dataclasses import dataclass
 from .model import Flux, FluxParams
 from .modules.autoencoder import AutoEncoder, AutoEncoderParams
-from src.utils import get_gpu_mem_info,flush
+from src.utils import get_gpu_mem_info,flush,flush_without_peak,save_images_with_prompt,save_images
 
 @dataclass
 class ModelSpec:
@@ -95,8 +97,8 @@ configs = {
         ),
     ),
     "flux-schnell": ModelSpec(
-        repo_id="black-forest-labs/FLUX.1-dev",
-        repo_id_ae="black-forest-labs/FLUX.1-dev",
+        repo_id="black-forest-labs/FLUX.1-schnell",
+        repo_id_ae="black-forest-labs/FLUX.1-schnell",
         repo_flow="flux1-schnell.safetensors",
         repo_ae="ae.safetensors",
         models_dir=os.getenv("FLUX_SCHNELL_DIR"),
@@ -132,6 +134,7 @@ configs = {
 
 class DiffusersFluxPipeline:
     def __init__(self, model_type: str, device: str | torch.device = "cuda", offload: bool = False):
+        self.model_type=model_type
         self.models_dir = configs[model_type].models_dir
         self.device = device
         self.offload = offload
@@ -170,43 +173,94 @@ class DiffusersFluxPipeline:
         if seed == -1:
             seed = torch.Generator(device="cpu").seed()
         generator = torch.Generator().manual_seed(seed)
+        pipe=None
         
         if not self.offload:
             if is_contronet_enable:
                 if self.first:
                     del self.pipeline
+                    if pipe is not None:
+                        del pipe
                     flush()
+                    self.first=False
                 
                 controlnet_a = FluxControlNetModel.from_pretrained(local_path, torch_dtype=self.torch_dtype)
-                controlnet=FluxMultiControlNetModel(controlnet_a)
+                controlnet=FluxMultiControlNetModel([controlnet_a])
                 pipe = FluxControlNetPipeline.from_pretrained(self.models_dir, controlnet=controlnet, torch_dtype=torch.bfloat16)
                 if is_lora_enable:
                     pipe.load_lora_weights(lora_local_path)
                     pipe.fuse_lora(lora_scale=lora_weight)
+                pipe.to(self.device)
                 
-                control_image=load_image(controlnet_image)
+                control_image=load_image(controlnet_image) 
+                control_mode = control_weight
+                controlnet_conditioning_scale=0.5
                 
+                start_time = time.time()
+                images=pipe(
+                    prompt=prompt,
+                    height=height,
+                    width=width,
+                    num_inference_steps=num_steps,
+                    timesteps=timestep_to_start_cfg,
+                    guidance_scale=true_gs,
+                    control_image=control_image,
+                    controlnet_conditioning_scale=controlnet_conditioning_scale,
+                    control_mode=control_mode,
+                    num_images_per_prompt=1,
+                    generator=generator,
+                    max_sequence_length= 256 if self.model_type=="flux-schnell" else 512,
+                ).images          
             else:
                 if self.first is not True:
-                    FluxPipeline.from_pretrained(self.models_dir, torch_dtype=self.torch_dtype)
+                    del self.pipeline
+                    if pipe is not None:
+                        del pipe
+                    flush()
+                    pipe = self.pipeline=FluxPipeline.from_pretrained(self.models_dir, torch_dtype=self.torch_dtype)
+                    self.first=True
                 else:
+                    flush()
                     pipe = self.pipeline
                 if is_lora_enable:
                     pipe.load_lora_weights(lora_local_path)
                     pipe.fuse_lora(lora_scale=lora_weight)
-                pipe.enable_model_cpu_offload()
-                image = pipe(prompt, 
-                    num_inference_steps=24, 
-                    guidance_scale=3.5,
-                    width=768, height=1024,
+                pipe.to(self.device)
+                # pipe.enable_model_cpu_offload()
+                images = pipe(
+                    prompt=prompt, 
+                    height=height, width=width,
+                    num_inference_steps=num_steps, 
+                    timesteps=timestep_to_start_cfg,
+                    guidance_scale=true_gs,
+                    generator=generator,
+                    max_sequence_length= 256 if self.model_type=="flux-schnell" else 512,
                 ).images
-                
         else:
+            flush()
             if self.first is not True:
                 self.text_encoder = CLIPTextModel.from_pretrained(self.models_dir,subfolder="text_encoder",torch_dtype=self.torch_dtype)
                 self.text_encoder_2 = T5EncoderModel.from_pretrained(self.models_dir,subfolder="text_encoder_2",torch_dtype=self.torch_dtype)
                 self.tokenizer = CLIPTokenizer.from_pretrained(self.models_dir, subfolder="tokenizer")
                 self.tokenizer_2 = T5TokenizerFast.from_pretrained(self.models_dir, subfolder="tokenizer_2")
+            
+            if is_contronet_enable:
+                if self.first is True:
+                    del self.pipeline
+                    flush()
+                controlnet_a = FluxControlNetModel.from_pretrained(local_path, torch_dtype=self.torch_dtype)
+                controlnet=FluxMultiControlNetModel([controlnet_a])
+                self.pipeline = FluxControlNetPipeline.from_pretrained(
+                    self.models_dir,
+                    text_encoder=self.text_encoder,
+                    textencoder_2=self.text_encoder_2,
+                    tokenizer=self.tokenizer,
+                    tokenizer_2=self.tokenizer_2,
+                    transformer=None,
+                    vae=None,
+                    controlnet=controlnet,
+                ).to(self.device)
+            elif self.first is not True:
                 self.pipeline=FluxPipeline.from_pretrained(
                     self.models_dir,
                     text_encoder=self.text_encoder,
@@ -216,6 +270,7 @@ class DiffusersFluxPipeline:
                     transformer=None,
                     vae=None,
                 ).to(self.device)
+                
             with torch.no_grad():
                 print("Encoding prompts...")
                 gr.Info("编码提示词中...",duration=2)
@@ -223,57 +278,103 @@ class DiffusersFluxPipeline:
                     prompt=prompt, prompt_2=None, max_sequence_length=256
                 )
                 
+            self.first = False
+                    
             del self.text_encoder
             del self.text_encoder_2
             del self.tokenizer
             del self.tokenizer_2
             del self.pipeline
-              
-            flush()
-            self.first = False
                 
-            pipe = FluxPipeline.from_pretrained(
-                self.models_dir,
-                text_encoder=None,
-                text_encoder_2=None,
-                tokenizer=None,
-                tokenizer_2=None,
-                vae=None,
-                torch_dtype=self.torch_dtype,
-            ).to(self.device)
-                
+            flush_without_peak()
+                    
+            if is_contronet_enable:
+                pipe=FluxControlNetPipeline.from_pretrained(
+                    self.models_dir,
+                    text_encoder=None,
+                    text_encoder_2=None,
+                    tokenizer=None,
+                    tokenizer_2=None,
+                    vae=None,
+                    controlnet=controlnet,
+                    torch_dtype=self.torch_dtype,
+                )
+            else:
+                pipe = FluxPipeline.from_pretrained(
+                    self.models_dir,
+                    text_encoder=None,
+                    text_encoder_2=None,
+                    tokenizer=None,
+                    tokenizer_2=None,
+                    vae=None,
+                    torch_dtype=self.torch_dtype,
+                )
+            if is_lora_enable:
+                pipe.load_lora_weights(lora_local_path)
+                pipe.fuse_lora(lora_scale=lora_weight)
+                    
+            pipe.to(self.device)
+                    
             print("Running denoising...")
             gr.Info("开始降噪...")
             latents = pipe(
-                prompt_embeds=prompt_embeds,
-                pooled_prompt_embeds=pooled_prompt_embeds,
-                num_inference_steps=num_steps,
-                guidance_scale=true_gs,
-                height=height,
-                width=width,
-                output_type="latent",
-            ).images
+                    prompt_embeds=prompt_embeds,
+                    pooled_prompt_embeds=pooled_prompt_embeds,
+                    num_inference_steps=num_steps,
+                    guidance_scale=true_gs,
+                    height=height,
+                    width=width,
+                    output_type="latent",
+                ).images
             print(f"Latents Shape: {latents.shape=}")
-                
+                    
             del pipe.transformer
             del pipe
-                
-            flush()
-                
+                    
+            flush_without_peak()
+                    
             vae = AutoencoderKL.from_pretrained(self.models_dir, revision="refs/pr/1", subfolder="vae", torch_dtype=self.torch_dtype).to(
-                self.device
+                    self.device
             )
             vae_scale_factor = 2 ** (len(vae.config.block_out_channels))
             image_processor = VaeImageProcessor(vae_scale_factor=vae_scale_factor)
-            
+                
             with torch.no_grad():
-                print("Running decoding.")
-                gr.Info("解码中...")
-                
-                latents = FluxPipeline._unpack_latents(latents, height, width, vae_scale_factor)
-                latents = (latents / vae.config.scaling_factor) + vae.config.shift_factor
+                    print("Running decoding.")
+                    gr.Info("解码中...")
+                    
+                    latents = FluxPipeline._unpack_latents(latents, height, width, vae_scale_factor)
+                    latents = (latents / vae.config.scaling_factor) + vae.config.shift_factor
 
-                images = vae.decode(latents, return_dict=False)[0]
-                images = image_processor.postprocess(image, output_type="pil")
-                images[0].save("image.png")        
+                    images = vae.decode(latents, return_dict=False)
+                    images = image_processor.postprocess(images, output_type="pil")       
+        
+        # 计算用时和峰值显存占用
+        elapsed_time = time.time() - start_time
+        max_vram_usage = torch.cuda.max_memory_allocated() / 1024 / 1024 /1024 # GB 
                 
+        timestamp_after_generation = str(datetime.now().strftime("%Y%m%d_%H%M%S"))
+                
+        print(f"推理已完成！")
+        print("生成所耗费的时间：", elapsed_time, "s")
+        print("峰值显存占用：", max_vram_usage, "GB")
+                
+        saved_paths=None
+        whether_save_prompt=True
+        if whether_save_prompt:
+            saved_paths=save_images_with_prompt(
+                prompt=prompt,
+                seed=seed,
+                guidance_scale=true_gs,
+                checkpoint=self.models_dir,
+                width = width, height = height,
+                num_inference_steps = num_steps,
+                max_memory_usage=max_vram_usage,
+                generation_time=elapsed_time,
+                images=images,
+                timestamp=timestamp_after_generation,
+            )
+        else:
+            saved_paths=save_images(images,timestamp_after_generation)
+                
+        return images[0],saved_paths[0]       
