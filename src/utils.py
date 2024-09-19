@@ -29,7 +29,7 @@ def flush():
     gc.collect()
     torch.cuda.empty_cache()
     torch.cuda.reset_max_memory_allocated()
-    torch.cuda.reset_peak_memory_stats()
+    # torch.cuda.reset_peak_memory_stats()
 
 def flush_without_peak():
     gc.collect()
@@ -107,4 +107,4 @@ def save_images_with_prompt(
     with open(filepath, 'w') as f:
         json.dump(params, f, indent=4)
     
-    return save_images(images,timestamp)
+    return save_images(images,timestamp,output_folder=output_folder)

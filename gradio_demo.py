@@ -123,7 +123,7 @@ def init_pipeline(pipeline_type: str = "xflux", model_type: str = "flux-dev", de
         steps=4
         guidance=0.0
     else:
-        steps=40
+        steps=28
         guidance=3.5
     return pipeline, steps, guidance
 
@@ -141,10 +141,7 @@ class casdao_xflux_ui:
         self.gpu_mem_total, self.gpu_mem_used, self.gpu_mem_free = get_gpu_mem_info(gpu_id=0)
         
         self.pipeline_list=["xflux","diffusers"]
-        if self.gpu_mem_total> 25:
-            self.model_list=["flux-dev","flux-schnell"]
-        else:
-            self.model_list=["flux-dev","flux-dev-fp8","flux-schnell"]
+        self.model_list=["flux-dev","flux-schnell"]
         
         self.pipeline, self.init_steps,self.init_gs=init_pipeline(pipeline_type,model_type,device,offload)
         self.controlnet_checkpoints=sorted(Path(self.ckpt_dir+"/Controlnet").glob("*.safetensors"))
@@ -205,25 +202,27 @@ class casdao_xflux_ui:
                 """
             )
             with gr.Row():
-                pipeline_dropdown=gr.Dropdown(label="推理管线（Pipeline）",choices=self.pipeline_list,value=self.pipeline_type)
-                model_checkpoint=gr.Dropdown(label="模型（Checkpoint）",choices=self.model_list,value=self.model_type,scale=5, interactive=True if self.gpu_mem_total>25 else False)
+                pipeline_dropdown=gr.Dropdown(
+                    label="推理管线（Pipeline）",
+                    info="Diffusers 对非 XLabs-AI 推出的 ContorlNet，LoRA 管线的兼容性更佳",
+                    choices=self.pipeline_list,
+                    value="diffusers" if self.gpu_mem_total < 25 else self.pipeline_type,
+                    scale=3,
+                    visible=False if self.gpu_mem_total < 25 else True,
+                )
+                model_checkpoint=gr.Dropdown(label="模型（Checkpoint）",choices=self.model_list,value=self.model_type,scale=4)
                 device_dropdown=gr.Dropdown(label="设备（Device）",choices=["cpu","cuda"],value=self.device,visible=False, scale=0,allow_custom_value=True)
-                offload_checkbox=gr.Checkbox(label="低内存模式（Offload for Low VRAM）",
+                offload_checkbox=gr.Checkbox(label="低显存模式（Offload for Low VRAM）",
                                             # info="4090及以下的显卡不使用FP8模型时一定要勾选！",
-                                            value=self.offload,
-                                            scale=1,
+                                            value= True if self.gpu_mem_total < 25 else self.offload,
+                                            scale=2,
                                             container=True,
-                                            interactive= False,
-                                            visible = False if self.gpu_mem_total>25 else True)
+                                            interactive = False if self.gpu_mem_total < 25 else True,
+                )
                 
             with gr.Tab("推理（Inference）"):
                 with gr.Row():
                     with gr.Column():
-                        with gr.Row(elem_classes="enable_button"):
-                            is_contronet_enable=gr.Checkbox(label="启用ControlNet",container=True,elem_classes="enable_button")
-                            is_lora_enable=gr.Checkbox(label="启用LoRA",container=True,elem_classes="enable_button")
-                            is_ip_enable=gr.Checkbox(label="启用IP Adpater",container=True,elem_classes="enable_button",visible=True if self.pipeline_type=="xflux" else False)
-                            generate_btn = gr.Button("生成（Generate）",elem_id="generate_btn")
                         with gr.Accordion(label="提示词（Prompt）",open=True):
                             with gr.Row():
                                 prompt = gr.Textbox(
@@ -256,47 +255,62 @@ class casdao_xflux_ui:
                             
                             seed = gr.Textbox(-1, label="随机种子（Seed，-1 为随机）")
                         
-                        with gr.Accordion("ControlNet 设置（需启用 ControlNet 才有效）", open=False, elem_id="controlnet_options"):
-                            # is_contronet_enable=gr.Checkbox(label="启用（Enable）",container=True,scale=1)
+                        with gr.Accordion(label="高级生成设置（Advanced Generation Options）",open=True):
                             with gr.Row():
-                                control_type = gr.Dropdown(["canny", "hed", "depth"], value="canny",label="Control 类型（type）",scale=1)
-                                local_path = gr.Dropdown(self.controlnet_checkpoints, 
-                                    value=self.controlnet_checkpoints[0],
-                                    label="Controlnet 模型（Checkpoint）",
-                                    info="Controlnet 模型的本地地址（如果无, 将会从 Hugging Face 下载。）",
-                                    scale=2
-                                )
-                            control_weight = gr.Slider(0.0, 1.0 if self.pipeline_type=="xflux" else 5.0, 0.8, step=0.1, label="Controlnet 权重（weight）", interactive=True)
-                            controlnet_image = gr.Image(label="输入的 Controlnet 图片", visible=True, interactive=True)
+                                is_contronet_enable=gr.Checkbox(label="启用ControlNet",container=True,elem_classes="enable_button")
+                                is_lora_enable=gr.Checkbox(label="启用LoRA",container=True,elem_classes="enable_button")
+                                is_ip_enable=gr.Checkbox(label="启用IP Adpater",container=True,elem_classes="enable_button",visible=True if self.pipeline_type=="xflux" else False)
+                            
+                            with gr.Column():
+                                # is_contronet_enable=gr.Checkbox(label="启用ControlNet",container=True,elem_classes="enable_button")
+                                with gr.Accordion("ControlNet 设置（需启用 ControlNet 才有效）", open=False, visible=False) as controlnet_options:
+                                    # is_contronet_enable=gr.Checkbox(label="启用（Enable）",container=True,scale=1)
+                                    with gr.Row():
+                                        control_type = gr.Dropdown(["canny", "hed", "depth"], value="canny",label="Control 类型（type）",scale=1,visible=True if self.pipeline_type=="xflux" else False)
+                                        local_path = gr.Dropdown(self.controlnet_checkpoints, 
+                                            value=self.controlnet_checkpoints[0],
+                                            label="Controlnet 模型（Checkpoint）",
+                                            info="Controlnet 模型的本地地址（如果无, 将会从 Hugging Face 下载。）",
+                                            scale=4
+                                        )
+                                        refresh_control_list_btn=gr.Button(value="",icon="../assets/icons/refresh.png",scale=1)
+                                    control_weight = gr.Slider(0.0, 1.0 if self.pipeline_type=="xflux" else 3.0, 0.8, step=0.1, label="Controlnet 权重（weight）", interactive=True)
+                                    controlnet_image = gr.Image(label="输入的 Controlnet 图片", visible=True, interactive=True)
+                            
+                            with gr.Column():
+                                # is_lora_enable=gr.Checkbox(label="启用LoRA",container=True,elem_classes="enable_button")
+                                with gr.Accordion("LoRA 设置（需启用 LoRA 才有效）", open=False, visible=False) as lora_options:
+                                    # is_lora_enable=gr.Checkbox(label="启用（Enable）",container=True,scale=1)
+                                    with gr.Row():
+                                        lora_local_path = gr.Dropdown(
+                                            self.lora_checkpoints, value=self.lora_checkpoints[0],
+                                            label="LoRA 模型（Checkpoint）", 
+                                            # info="LoRA 模型本地地址",
+                                            allow_custom_value=True,
+                                            scale=4,
+                                        )
+                                        refresh_lora_list_btn=gr.Button(value="",icon="../assets/icons/refresh.png",scale=1)
+                                    lora_weight = gr.Slider(0.0, 1.0 if self.pipeline_type=="xflux" else 3.0, 0.9, step=0.1, label="LoRA 权重（Weight）", interactive=True,scale=3)
+                            
+                            with gr.Column():
+                                # is_ip_enable=gr.Checkbox(label="启用IP Adpater",container=True,elem_classes="enable_button",visible=True if self.pipeline_type=="xflux" else False)
+                                with gr.Accordion("IP Adapter 设置（需启用 IP Adaptet 才有效）", open=False, visible=False) as ip_options:
+                                    # is_ip_enable=gr.Checkbox(label="启用（Enable）",container=True)
+                                    with gr.Accordion("正面图片提示设置（Positive Image Prompt Options）",open=True):
+                                        image_prompt = gr.Image(label="image_prompt", visible=True, interactive=True)
+                                        ip_scale = gr.Slider(0.0, 1.0, 1.0, step=0.1, label="ip_scale")
+                                    with gr.Accordion("负面图片提示设置（Negative Image Prompt Options）",open=False):
+                                        neg_image_prompt = gr.Image(label="neg_image_prompt", visible=True, interactive=True)
+                                        neg_ip_scale = gr.Slider(0.0, 1.0, 1.0, step=0.1, label="neg_ip_scale")
+                                    ip_local_path = gr.Dropdown(
+                                        self.ip_checkpoints, 
+                                        value=self.ip_checkpoints[0],
+                                        label="IP Adapter 模型（Checkpoint）",
+                                        info="IP Adapter 模型的本地地址（如果没有，将会从Hugging Face)",
+                                        visible=False,
+                                    )   
                         
-                        with gr.Accordion("LoRA 设置（需启用 LoRA 才有效）", open=False, elem_id="lora_options"):
-                            # is_lora_enable=gr.Checkbox(label="启用（Enable）",container=True,scale=1)
-                            with gr.Row():
-                                lora_local_path = gr.Dropdown(
-                                    self.lora_checkpoints, value=self.lora_checkpoints[0],
-                                    label="LoRA 模型（Checkpoint）", 
-                                    # info="LoRA 模型本地地址",
-                                    scale=3
-                                )
-                                lora_weight = gr.Slider(0.0, 1.0 if self.pipeline_type=="xflux" else 3.0, 0.9, step=0.1, label="LoRA 权重（Weight）", interactive=True,scale=3)
-                        
-                        with gr.Accordion("IP Adapter 设置（需启用 IP Adaptet 才有效）", open=False, visible=True if self.pipeline_type=="xflux" else False, elem_id="ip_options"):
-                            # is_ip_enable=gr.Checkbox(label="启用（Enable）",container=True)
-                            with gr.Accordion("正面图片提示设置（Positive Image Prompt Options）",open=True):
-                                image_prompt = gr.Image(label="image_prompt", visible=True, interactive=True)
-                                ip_scale = gr.Slider(0.0, 1.0, 1.0, step=0.1, label="ip_scale")
-                            with gr.Accordion("负面图片提示设置（Negative Image Prompt Options）",open=False):
-                                neg_image_prompt = gr.Image(label="neg_image_prompt", visible=True, interactive=True)
-                                neg_ip_scale = gr.Slider(0.0, 1.0, 1.0, step=0.1, label="neg_ip_scale")
-                            ip_local_path = gr.Dropdown(
-                                self.ip_checkpoints, 
-                                value=self.ip_checkpoints[0],
-                                label="IP Adapter 模型（Checkpoint）",
-                                info="IP Adapter 模型的本地地址（如果没有，将会从Hugging Face)",
-                                visible=False,
-                            )   
-                        
-                        # generate_btn = gr.Button("生成（Generate）")
+                        generate_btn = gr.Button("生成（Generate）", elem_id="generate_btn")
 
                     with gr.Column():
                         output_dir = gr.Textbox(label="图片生成地址（Local path of generated image）", value=self.output_path,visible=False)
@@ -315,17 +329,27 @@ class casdao_xflux_ui:
                         self.pipeline=DiffusersFluxPipeline(model_type,device,offload)
                         enable_xflux_funcitons=False
                     gr.Info("切换Flux管线完成！",duration=2)
+                    
                     outputs=[
                         pipeline_type,
-                        gr.update(visible=enable_xflux_funcitons),# is_ip_enable
+                        gr.update(visible=enable_xflux_funcitons,value = False if enable_xflux_funcitons== False else is_ip_enable), # is_ip_enable
                         gr.update(visible=enable_xflux_funcitons), # neagetive prompt
                         gr.update(visible=enable_xflux_funcitons), # timesteps
-                        gr.update(visible=enable_xflux_funcitons),# guidance
-                        gr.update(maximum=1.0 if self.pipeline_type=="xflux" else 5.0), # control_weight
-                        gr.update(maximum=1.0 if self.pipeline_type=="xflux" else 3.0) # LoRA weight
+                        gr.update(visible=enable_xflux_funcitons), # guidance
+                        gr.update(visible=enable_xflux_funcitons), # control_type
+                        gr.update(maximum=1.0 if pipeline_type=="xflux" else 3.0), # control_weight
+                        gr.update(maximum=1.0 if pipeline_type=="xflux" else 3.0), # LoRA weight
+                        gr.update(visible=enable_xflux_funcitons), # ip_options
                     ]
+                    
                     return outputs
 
+                pipeline_dropdown.change(
+                    fn=update_pipeline,
+                    inputs=[pipeline_dropdown,model_checkpoint,device_dropdown,offload_checkbox],
+                    outputs=[pipeline_dropdown,is_ip_enable,neg_prompt,timestep_to_start_cfg,guidance,control_type,control_weight,lora_weight,ip_options]
+                )
+                
                 def update_model(pipeline_type, model_type, device, offload):
                     gr.Info("切换Flux模型中...",duration=5)
                     del self.pipeline
@@ -343,10 +367,58 @@ class casdao_xflux_ui:
                         steps=28
                         guidance=3.5
                     
-                    if self.gpu_mem_total < 35:
+                    if self.gpu_mem_total < 25:
                         return model_type, device, True, steps, guidance
                     else: 
                         return model_type, device, offload, steps, guidance
+                
+                gr.on(
+                    triggers=[model_checkpoint.change,offload_checkbox.change],
+                    fn=update_model,
+                    inputs=[pipeline_dropdown,model_checkpoint,device_dropdown,offload_checkbox],
+                    outputs=[model_checkpoint,device_dropdown,offload_checkbox,num_steps,true_gs],
+                )
+                
+                def refresh_control_list():
+                    self.controlnet_checkpoints=sorted(Path(self.ckpt_dir+"/Controlnet").glob("*.safetensors"))
+                    return gr.update(choices=self.controlnet_checkpoints)
+                
+                refresh_control_list_btn.click(
+                    fn=refresh_control_list,
+                    inputs=[],
+                    outputs=[local_path]
+                )
+                
+                def refresh_lora_list():
+                    self.lora_checkpoints=sorted(Path(self.ckpt_dir+"/LoRA").glob("*.safetensors"))
+                    return gr.update(choices=self.lora_checkpoints)
+                
+                refresh_lora_list_btn.click(
+                    fn=refresh_lora_list,
+                    inputs=[],
+                    outputs=[lora_local_path]
+                )
+                
+                def update_options_open(is_enable):
+                        return gr.update(visible=True if is_enable is True else False)
+                
+                is_contronet_enable.change(
+                    fn=update_options_open,
+                    inputs=[is_contronet_enable],
+                    outputs=[controlnet_options],
+                )
+                
+                is_lora_enable.change(
+                    fn=update_options_open,
+                    inputs=[is_lora_enable],
+                    outputs=[lora_options],
+                )
+                
+                is_ip_enable.change(
+                    fn=update_options_open,
+                    inputs=[is_ip_enable],
+                    outputs=[ip_options],
+                )
                 
                 def generate(prompt, image_prompt, controlnet_image, width, height, guidance,
                         num_steps, seed, true_gs, 
@@ -376,22 +448,9 @@ class casdao_xflux_ui:
                     print("生成完毕")
                     print(f"生成耗费的时间：{elapsed_time:2f} 秒")
                     print(f"峰值显存占用: {max_vram_used:2f} GB")
-                    torch.cuda.empty_cache()
+                    flush()
                     max_vram_used=f"{max_vram_used:2f} GB"
                     return img,filename,max_vram_used,"生成（Generate）"
-                
-                pipeline_dropdown.change(
-                    fn=update_pipeline,
-                    inputs=[pipeline_dropdown,model_checkpoint,device_dropdown,offload_checkbox],
-                    outputs=[pipeline_dropdown,is_ip_enable,neg_prompt,timestep_to_start_cfg,guidance,control_weight,lora_weight]
-                )
-                
-                gr.on(
-                    triggers=[model_checkpoint.change,offload_checkbox.change],
-                    fn=update_model,
-                    inputs=[pipeline_dropdown,model_checkpoint,device_dropdown,offload_checkbox],
-                    outputs=[model_checkpoint,device_dropdown,offload_checkbox,num_steps,true_gs],
-                )
                 
                 inputs = [
                         prompt, image_prompt, controlnet_image, width, height, guidance,
@@ -409,7 +468,7 @@ class casdao_xflux_ui:
                     inputs=inputs,
                     outputs=[output_image, download_btn,max_vram,generate_btn],
                 )
-
+                
             with gr.Tab("LoRA Finetuning",visible=False):
                 data_dir =  gr.Dropdown(list_train_data_dirs(),
                                         label="训练图片 (directory containing the training images)",

@@ -1,8 +1,9 @@
-import datetime
+from datetime import datetime
 import os
 import time
 import torch
 import gradio as gr
+import peft
 
 from diffusers import FluxPipeline, AutoencoderKL, FluxControlNetPipeline, FluxControlNetModel, DiffusionPipeline
 from diffusers.models import FluxMultiControlNetModel
@@ -273,14 +274,11 @@ class DiffusersFluxPipeline:
                     revision="refs/pr/7",
                     torch_dtype=self.torch_dtype
                 )
-                if is_lora_enable:
-                    self.pipeline.load_lora_weights(lora_local_path,torch_dtype=self.torch_dtype)
-                    self.pipeline.fuse_lora(lora_scale=lora_weight,torch_dtype=self.torch_dtype)
                 self.pipeline.to(self.device)
             
             with torch.no_grad():
                 print("Encoding prompts.")
-                gr.Info("编码Prompt中...")
+                gr.Info("编码Prompt中...",duration=3)
                 prompt_embeds, pooled_prompt_embeds, text_ids = self.pipeline.encode_prompt(
                     prompt=prompt, prompt_2=None, max_sequence_length=256
                 )
@@ -316,11 +314,14 @@ class DiffusersFluxPipeline:
                     tokenizer_2=None,
                     vae=None,
                     torch_dtype=self.torch_dtype,
-                ).to("cuda")
+                ).to(self.device)
             
+            if is_lora_enable:
+                pipe.load_lora_weights(lora_local_path,torch_dtype=self.torch_dtype)
+                pipe.fuse_lora(lora_scale=lora_weight,torch_dtype=self.torch_dtype)
             
             print("Running denoising...")
-            gr.Info("开始降噪...")
+            gr.Info("开始降噪...",duration=3)
             
             if is_contronet_enable:
                 control_image=load_image(controlnet_image) 
@@ -338,6 +339,7 @@ class DiffusersFluxPipeline:
                     control_mode=control_mode,
                     num_images_per_prompt=1,
                     generator=generator,
+                    output_type="latent",
                 ).images
             else:
                 latents = pipe(
@@ -349,8 +351,9 @@ class DiffusersFluxPipeline:
                     guidance_scale=true_gs,
                     num_images_per_prompt=1,
                     generator=generator,
-                )
-            # print(f"Latents Shape: {latents.shape}")
+                    output_type="latent",
+                ).images
+            print(f"Latents Shape: {latents.shape}")
                     
             del pipe.transformer
             del pipe
@@ -365,13 +368,13 @@ class DiffusersFluxPipeline:
                 
             with torch.no_grad():
                 print("Running decoding.")
-                gr.Info("解码中...")
+                gr.Info("解码中...",duration=3)
                     
                 latents = FluxPipeline._unpack_latents(latents, height, width, vae_scale_factor)
                 latents = (latents / vae.config.scaling_factor) + vae.config.shift_factor
 
-                images = vae.decode(latents, return_dict=False)
-                images = image_processor.postprocess(images, output_type="pil")       
+                images = vae.decode(latents, return_dict=False)[0]
+                images = image_processor.postprocess(images, output_type="pil")  
         
         # 计算用时和峰值显存占用
         elapsed_time = time.time() - start_time
@@ -386,7 +389,7 @@ class DiffusersFluxPipeline:
         saved_paths=None
         whether_save_prompt=True
         if whether_save_prompt:
-            saved_paths=save_images_with_prompt(
+            _,saved_paths=save_images_with_prompt(
                 prompt=prompt,
                 seed=seed,
                 guidance_scale=true_gs,
@@ -397,8 +400,9 @@ class DiffusersFluxPipeline:
                 generation_time=elapsed_time,
                 images=images,
                 timestamp=timestamp_after_generation,
+                output_folder=output_dir,
             )
         else:
-            saved_paths=save_images(images,timestamp_after_generation)
+            _,saved_paths=save_images(images,timestamp_after_generation,output_folder=output_dir)
                 
         return images[0],saved_paths[0]       
