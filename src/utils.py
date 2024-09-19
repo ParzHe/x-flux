@@ -34,7 +34,7 @@ def flush():
 def flush_without_peak():
     gc.collect()
     torch.cuda.empty_cache()
-    torch.cuda.reset_max_memory_allocated()
+    # torch.cuda.reset_max_memory_allocated()
     # torch.cuda.reset_peak_memory_stats()
 
 def save_images(images,timestamp,output_folder):  

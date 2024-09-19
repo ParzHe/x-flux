@@ -146,7 +146,7 @@ class casdao_xflux_ui:
         else:
             self.model_list=["flux-dev","flux-dev-fp8","flux-schnell"]
         
-        self.pipeline, self.init_steps,self.init_gs=init_pipeline(model_type,device,offload)
+        self.pipeline, self.init_steps,self.init_gs=init_pipeline(pipeline_type,model_type,device,offload)
         self.controlnet_checkpoints=sorted(Path(self.ckpt_dir+"/Controlnet").glob("*.safetensors"))
         self.lora_checkpoints=sorted(Path(self.ckpt_dir+"/LoRA").glob("*.safetensors"))
         self.ip_checkpoints=sorted(Path(self.ckpt_dir+"/IP_Adapter").glob("*.safetensors"))
@@ -222,7 +222,7 @@ class casdao_xflux_ui:
                         with gr.Row(elem_classes="enable_button"):
                             is_contronet_enable=gr.Checkbox(label="启用ControlNet",container=True,elem_classes="enable_button")
                             is_lora_enable=gr.Checkbox(label="启用LoRA",container=True,elem_classes="enable_button")
-                            is_ip_enable=gr.Checkbox(label="启用IP Adpater",container=True,elem_classes="enable_button")
+                            is_ip_enable=gr.Checkbox(label="启用IP Adpater",container=True,elem_classes="enable_button",visible=True if self.pipeline_type=="xflux" else False)
                             generate_btn = gr.Button("生成（Generate）",elem_id="generate_btn")
                         with gr.Accordion(label="提示词（Prompt）",open=True):
                             with gr.Row():
@@ -237,7 +237,9 @@ class casdao_xflux_ui:
                                     # info="负面提示词及提示模型不要生成的内容，如bad photo。需要输入英文",
                                     placeholder="使用英文，输入负面提示词，即不希望模型生成的内容",
                                     value="bad photo",
-                                    container=True)
+                                    container=True,
+                                    visible=True if self.pipeline_type=="xflux" else False
+                                )
                             
                         with gr.Accordion("生成设置（Generation Options）", open=True):
                             with gr.Row():
@@ -246,10 +248,10 @@ class casdao_xflux_ui:
                             
                             with gr.Row():
                                 num_steps = gr.Slider(1, 100, self.init_steps, step=1, label="迭代步数（Number of steps）")
-                                timestep_to_start_cfg = gr.Slider(1, 50, 1, step=1, label="timestep_to_start_cfg")
+                                timestep_to_start_cfg = gr.Slider(1, 50, 1, step=1, label="timestep_to_start_cfg",visible=True if self.pipeline_type=="xflux" else False)
                             
                             with gr.Row():
-                                guidance = gr.Slider(0.0, 10.0, 4.0 if not self.init_gs==0 else 0, step=0.1, label="引导（Guidance）", interactive=True)
+                                guidance = gr.Slider(0.0, 10.0, 4.0 if not self.init_gs==0 else 0, step=0.1, label="引导（Guidance）", interactive=True, visible=True if self.pipeline_type=="xflux" else False)
                                 true_gs = gr.Slider(0.0, 10.0, self.init_gs, step=0.1, label="True Guidance", interactive=True, )
                             
                             seed = gr.Textbox(-1, label="随机种子（Seed，-1 为随机）")
@@ -264,7 +266,7 @@ class casdao_xflux_ui:
                                     info="Controlnet 模型的本地地址（如果无, 将会从 Hugging Face 下载。）",
                                     scale=2
                                 )
-                            control_weight = gr.Slider(0.0, 1.0, 0.8, step=0.1, label="Controlnet 权重（weight）", interactive=True)
+                            control_weight = gr.Slider(0.0, 1.0 if self.pipeline_type=="xflux" else 5.0, 0.8, step=0.1, label="Controlnet 权重（weight）", interactive=True)
                             controlnet_image = gr.Image(label="输入的 Controlnet 图片", visible=True, interactive=True)
                         
                         with gr.Accordion("LoRA 设置（需启用 LoRA 才有效）", open=False, elem_id="lora_options"):
@@ -276,9 +278,9 @@ class casdao_xflux_ui:
                                     # info="LoRA 模型本地地址",
                                     scale=3
                                 )
-                                lora_weight = gr.Slider(0.0, 1.0, 0.9, step=0.1, label="LoRA 权重（Weight）", interactive=True,scale=3)
+                                lora_weight = gr.Slider(0.0, 1.0 if self.pipeline_type=="xflux" else 3.0, 0.9, step=0.1, label="LoRA 权重（Weight）", interactive=True,scale=3)
                         
-                        with gr.Accordion("IP Adapter 设置（需启用 IP Adaptet 才有效）", open=False, elem_id="ip_options"):
+                        with gr.Accordion("IP Adapter 设置（需启用 IP Adaptet 才有效）", open=False, visible=True if self.pipeline_type=="xflux" else False, elem_id="ip_options"):
                             # is_ip_enable=gr.Checkbox(label="启用（Enable）",container=True)
                             with gr.Accordion("正面图片提示设置（Positive Image Prompt Options）",open=True):
                                 image_prompt = gr.Image(label="image_prompt", visible=True, interactive=True)
@@ -302,16 +304,37 @@ class casdao_xflux_ui:
                         download_btn = gr.File(label="下载高清图片（Download full-resolution）")
                         max_vram = gr.Textbox(label="生成时峰值显存占用（Maximum Useed VRAM）",value=f"无生成，无数据")
                 
-                
                 def update_pipeline(pipeline_type, model_type, device, offload):
-                    gr.Info("切换Flux管线/模型中...",duration=5)
+                    gr.Info("切换Flux管线中...",duration=5)
                     del self.pipeline
-                    torch.cuda.empty_cache()
+                    flush()
+                    if pipeline_type=="xflux":
+                        self.pipeline=XFluxPipeline(model_type, device, offload)
+                        enable_xflux_funcitons=True
+                    else:
+                        self.pipeline=DiffusersFluxPipeline(model_type,device,offload)
+                        enable_xflux_funcitons=False
+                    gr.Info("切换Flux管线完成！",duration=2)
+                    outputs=[
+                        pipeline_type,
+                        gr.update(visible=enable_xflux_funcitons),# is_ip_enable
+                        gr.update(visible=enable_xflux_funcitons), # neagetive prompt
+                        gr.update(visible=enable_xflux_funcitons), # timesteps
+                        gr.update(visible=enable_xflux_funcitons),# guidance
+                        gr.update(maximum=1.0 if self.pipeline_type=="xflux" else 5.0), # control_weight
+                        gr.update(maximum=1.0 if self.pipeline_type=="xflux" else 3.0) # LoRA weight
+                    ]
+                    return outputs
+
+                def update_model(pipeline_type, model_type, device, offload):
+                    gr.Info("切换Flux模型中...",duration=5)
+                    del self.pipeline
+                    flush()
                     if pipeline_type=="xflux":
                         self.pipeline=XFluxPipeline(model_type, device, offload)
                     else:
                         self.pipeline=DiffusersFluxPipeline(model_type,device,offload)
-                    gr.Info("切换Flux管线/模型完成！",duration=2)
+                    gr.Info("切换Flux模型完成！",duration=2)
                     
                     if model_type == "flux-schnell":
                         steps=4
@@ -320,9 +343,7 @@ class casdao_xflux_ui:
                         steps=28
                         guidance=3.5
                     
-                    if self.gpu_mem_total < 35 and model_type == "flux-dev-fp8":
-                        return model_type, device, False, steps, guidance
-                    elif self.gpu_mem_total < 35:
+                    if self.gpu_mem_total < 35:
                         return model_type, device, True, steps, guidance
                     else: 
                         return model_type, device, offload, steps, guidance
@@ -359,10 +380,16 @@ class casdao_xflux_ui:
                     max_vram_used=f"{max_vram_used:2f} GB"
                     return img,filename,max_vram_used,"生成（Generate）"
                 
-                gr.on(
-                    triggers=[pipeline_dropdown.change,model_checkpoint.change,offload_checkbox.change],
+                pipeline_dropdown.change(
                     fn=update_pipeline,
-                    inputs=[model_checkpoint,device_dropdown,offload_checkbox],
+                    inputs=[pipeline_dropdown,model_checkpoint,device_dropdown,offload_checkbox],
+                    outputs=[pipeline_dropdown,is_ip_enable,neg_prompt,timestep_to_start_cfg,guidance,control_weight,lora_weight]
+                )
+                
+                gr.on(
+                    triggers=[model_checkpoint.change,offload_checkbox.change],
+                    fn=update_model,
+                    inputs=[pipeline_dropdown,model_checkpoint,device_dropdown,offload_checkbox],
                     outputs=[model_checkpoint,device_dropdown,offload_checkbox,num_steps,true_gs],
                 )
                 

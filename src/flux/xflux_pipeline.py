@@ -1,3 +1,6 @@
+import datetime
+import json
+import time
 from PIL import Image, ExifTags
 import numpy as np
 import torch
@@ -241,16 +244,46 @@ class XFluxPipeline:
         if seed == -1:
             seed = torch.Generator(device="cpu").seed()
 
+        start_time = time.time()
         img = self(prompt, image_prompt, controlnet_image, width, height, guidance,
                    num_steps, seed, true_gs, control_weight, ip_scale, neg_ip_scale, neg_prompt,
                    neg_image_prompt, timestep_to_start_cfg)
 
-        filename = f"{output_dir}/{uuid.uuid4()}.jpg"
+         # 计算用时和峰值显存占用
+        elapsed_time = time.time() - start_time
+        max_vram_usage = torch.cuda.max_memory_allocated() / 1024 / 1024 /1024 # GB 
+        
+        timestamp_after_generation = str(datetime.now().strftime("%Y%m%d_%H%M%S"))
+        
+        output_path=f"{output_dir}/{timestamp_after_generation}/"
+        filename = os.path.join(output_path,f"{uuid.uuid4()}.jpg")
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         exif_data = Image.Exif()
         exif_data[ExifTags.Base.Make] = "XLabs AI"
         exif_data[ExifTags.Base.Model] = self.model_type
         img.save(filename, format="jpeg", exif=exif_data, quality=95, subsampling=0)
+        
+        params={
+            'prompt': prompt,
+            'negative prompt':neg_prompt,
+            'checkpoint': local_path,
+            'seed': seed,
+            'guidance_scale': guidance,
+            'true guidance': true_gs,
+            'width': width,
+            'height': height,
+            'num_inference_steps': num_steps,
+            'timesteps_to_start_cfg':timestep_to_start_cfg,
+            'max_memory_usage': f"{max_vram_usage} GB",
+            'generation_time': f"{elapsed_time} s",
+        }
+        
+        prompt_record_name="prompt.json"
+        prompt_record_path=os.path.join(output_path,prompt_record_name)
+        
+        with open(prompt_record_path, 'w') as f:
+            json.dump(params, f, indent=4)
+        
         return img, filename
 
     def forward(

@@ -4,7 +4,7 @@ import time
 import torch
 import gradio as gr
 
-from diffusers import FluxPipeline, AutoencoderKL, FluxControlNetPipeline, FluxControlNetModel
+from diffusers import FluxPipeline, AutoencoderKL, FluxControlNetPipeline, FluxControlNetModel, DiffusionPipeline
 from diffusers.models import FluxMultiControlNetModel
 from diffusers.image_processor import VaeImageProcessor
 from diffusers.utils import load_image
@@ -159,7 +159,8 @@ class DiffusersFluxPipeline:
                 tokenizer_2=self.tokenizer_2,
                 transformer=None,
                 vae=None,
-            ).to(self.device)
+                revision="refs/pr/7",
+            )
 
     @torch.inference_mode()
     def gradio_generate(self, prompt, image_prompt, controlnet_image, width, height, guidance,
@@ -174,14 +175,16 @@ class DiffusersFluxPipeline:
             seed = torch.Generator(device="cpu").seed()
         generator = torch.Generator().manual_seed(seed)
         pipe=None
+        start_time = time.time()
         
         if not self.offload:
+            flush()
+            
             if is_contronet_enable:
                 if self.first:
                     del self.pipeline
                     if pipe is not None:
                         del pipe
-                    flush()
                     self.first=False
                 
                 controlnet_a = FluxControlNetModel.from_pretrained(local_path, torch_dtype=self.torch_dtype)
@@ -196,13 +199,11 @@ class DiffusersFluxPipeline:
                 control_mode = control_weight
                 controlnet_conditioning_scale=0.5
                 
-                start_time = time.time()
                 images=pipe(
                     prompt=prompt,
                     height=height,
                     width=width,
                     num_inference_steps=num_steps,
-                    timesteps=timestep_to_start_cfg,
                     guidance_scale=true_gs,
                     control_image=control_image,
                     controlnet_conditioning_scale=controlnet_conditioning_scale,
@@ -231,7 +232,6 @@ class DiffusersFluxPipeline:
                     prompt=prompt, 
                     height=height, width=width,
                     num_inference_steps=num_steps, 
-                    timesteps=timestep_to_start_cfg,
                     guidance_scale=true_gs,
                     generator=generator,
                     max_sequence_length= 256 if self.model_type=="flux-schnell" else 512,
@@ -258,10 +258,11 @@ class DiffusersFluxPipeline:
                     tokenizer_2=self.tokenizer_2,
                     transformer=None,
                     vae=None,
-                    controlnet=controlnet,
-                ).to(self.device)
-            elif self.first is not True:
-                self.pipeline=FluxPipeline.from_pretrained(
+                    revision="refs/pr/7",
+                    torch_dtype=self.torch_dtype
+                )
+            else:
+                self.pipeline = FluxPipeline.from_pretrained(
                     self.models_dir,
                     text_encoder=self.text_encoder,
                     textencoder_2=self.text_encoder_2,
@@ -269,16 +270,23 @@ class DiffusersFluxPipeline:
                     tokenizer_2=self.tokenizer_2,
                     transformer=None,
                     vae=None,
-                ).to(self.device)
-                
+                    revision="refs/pr/7",
+                    torch_dtype=self.torch_dtype
+                )
+                if is_lora_enable:
+                    self.pipeline.load_lora_weights(lora_local_path,torch_dtype=self.torch_dtype)
+                    self.pipeline.fuse_lora(lora_scale=lora_weight,torch_dtype=self.torch_dtype)
+                self.pipeline.to(self.device)
+            
             with torch.no_grad():
-                print("Encoding prompts...")
-                gr.Info("编码提示词中...",duration=2)
+                print("Encoding prompts.")
+                gr.Info("编码Prompt中...")
                 prompt_embeds, pooled_prompt_embeds, text_ids = self.pipeline.encode_prompt(
                     prompt=prompt, prompt_2=None, max_sequence_length=256
                 )
-                
             self.first = False
+            
+            print("Type of the prompt embeds:",type(prompt_embeds))
                     
             del self.text_encoder
             del self.text_encoder_2
@@ -287,9 +295,9 @@ class DiffusersFluxPipeline:
             del self.pipeline
                 
             flush_without_peak()
-                    
+            
             if is_contronet_enable:
-                pipe=FluxControlNetPipeline.from_pretrained(
+                pipe = FluxControlNetPipeline.from_pretrained(
                     self.models_dir,
                     text_encoder=None,
                     text_encoder_2=None,
@@ -298,8 +306,8 @@ class DiffusersFluxPipeline:
                     vae=None,
                     controlnet=controlnet,
                     torch_dtype=self.torch_dtype,
-                )
-            else:
+                ).to(self.device)
+            else:        
                 pipe = FluxPipeline.from_pretrained(
                     self.models_dir,
                     text_encoder=None,
@@ -308,25 +316,41 @@ class DiffusersFluxPipeline:
                     tokenizer_2=None,
                     vae=None,
                     torch_dtype=self.torch_dtype,
-                )
-            if is_lora_enable:
-                pipe.load_lora_weights(lora_local_path)
-                pipe.fuse_lora(lora_scale=lora_weight)
-                    
-            pipe.to(self.device)
-                    
+                ).to("cuda")
+            
+            
             print("Running denoising...")
             gr.Info("开始降噪...")
-            latents = pipe(
-                    prompt_embeds=prompt_embeds,
-                    pooled_prompt_embeds=pooled_prompt_embeds,
-                    num_inference_steps=num_steps,
-                    guidance_scale=true_gs,
+            
+            if is_contronet_enable:
+                control_image=load_image(controlnet_image) 
+                controlnet_conditioning_scale=0.5
+                control_mode = control_weight
+                latents = pipe(
+                    prompt_embeds=prompt_embeds.to(torch.bfloat16),
+                    pooled_prompt_embeds=pooled_prompt_embeds.to(torch.bfloat16),
                     height=height,
                     width=width,
-                    output_type="latent",
+                    num_inference_steps=num_steps,
+                    guidance_scale=true_gs,
+                    control_image=control_image,
+                    controlnet_conditioning_scale=controlnet_conditioning_scale,
+                    control_mode=control_mode,
+                    num_images_per_prompt=1,
+                    generator=generator,
                 ).images
-            print(f"Latents Shape: {latents.shape=}")
+            else:
+                latents = pipe(
+                    prompt_embeds=prompt_embeds.to(torch.bfloat16),
+                    pooled_prompt_embeds=pooled_prompt_embeds.to(torch.bfloat16),
+                    height=height,
+                    width=width,
+                    num_inference_steps=num_steps,
+                    guidance_scale=true_gs,
+                    num_images_per_prompt=1,
+                    generator=generator,
+                )
+            # print(f"Latents Shape: {latents.shape}")
                     
             del pipe.transformer
             del pipe
@@ -340,14 +364,14 @@ class DiffusersFluxPipeline:
             image_processor = VaeImageProcessor(vae_scale_factor=vae_scale_factor)
                 
             with torch.no_grad():
-                    print("Running decoding.")
-                    gr.Info("解码中...")
+                print("Running decoding.")
+                gr.Info("解码中...")
                     
-                    latents = FluxPipeline._unpack_latents(latents, height, width, vae_scale_factor)
-                    latents = (latents / vae.config.scaling_factor) + vae.config.shift_factor
+                latents = FluxPipeline._unpack_latents(latents, height, width, vae_scale_factor)
+                latents = (latents / vae.config.scaling_factor) + vae.config.shift_factor
 
-                    images = vae.decode(latents, return_dict=False)
-                    images = image_processor.postprocess(images, output_type="pil")       
+                images = vae.decode(latents, return_dict=False)
+                images = image_processor.postprocess(images, output_type="pil")       
         
         # 计算用时和峰值显存占用
         elapsed_time = time.time() - start_time
