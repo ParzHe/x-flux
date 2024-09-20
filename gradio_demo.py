@@ -172,7 +172,7 @@ class casdao_xflux_ui:
     
     def create_demo(self):
         with gr.Blocks(title="X-Flux-WebUI",css=self.css) as demo:
-            gr.Markdown(f"# X-Flux-WebUI：由 XLabs AI 推出的 Flux Adapter")
+            gr.Markdown(f"# Flux-WebUI：由 Casdao 推出的 Flux-WebUI")
             gr.HTML(
                 """
                 <div>
@@ -445,9 +445,9 @@ class casdao_xflux_ui:
                     elapsed_time = time.time()-start_time
                     max_vram_used = torch.cuda.max_memory_allocated() / 1024 / 1024 /1024
                     gr.Info("生成完毕",duration=2)
-                    print("生成完毕")
-                    print(f"生成耗费的时间：{elapsed_time:2f} 秒")
-                    print(f"峰值显存占用: {max_vram_used:2f} GB")
+                    # print("生成完毕")
+                    # print(f"生成耗费的时间：{elapsed_time:2f} 秒")
+                    # print(f"峰值显存占用: {max_vram_used:2f} GB")
                     flush()
                     max_vram_used=f"{max_vram_used:2f} GB"
                     return img,filename,max_vram_used,"生成（Generate）"

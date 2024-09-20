@@ -135,6 +135,9 @@ configs = {
 
 class DiffusersFluxPipeline:
     def __init__(self, model_type: str, device: str | torch.device = "cuda", offload: bool = False):
+        print("初始化 Diffusers 管线中...")
+        gr.Info("初始化 Diffusers 管线中...",duration=5)
+        
         self.model_type=model_type
         self.models_dir = configs[model_type].models_dir
         self.device = device
@@ -144,9 +147,20 @@ class DiffusersFluxPipeline:
         flush()
         self.gpu_mem_total, self.gpu_mem_used, self.gpu_mem_free = get_gpu_mem_info(gpu_id=0)
         
+        self.control_pipe=False
+        
+        self.is_loaded_control=False
+        self.loaded_control=None
+        
+        self.is_loaded_lora=False
+        self.loaded_lora=None
+        self.loaded_lora_scale=None
+        
         self.first=True
+        
         if not self.offload:
             self.pipeline=FluxPipeline.from_pretrained(self.models_dir, torch_dtype=self.torch_dtype)
+            self.pipeline.to(self.device)
         else:
             self.text_encoder = CLIPTextModel.from_pretrained(self.models_dir,subfolder="text_encoder",torch_dtype=self.torch_dtype)
             self.text_encoder_2 = T5EncoderModel.from_pretrained(self.models_dir,subfolder="text_encoder_2",torch_dtype=self.torch_dtype)
@@ -162,7 +176,11 @@ class DiffusersFluxPipeline:
                 vae=None,
                 revision="refs/pr/7",
             )
-
+            self.pipeline.to(self.device)
+        
+        print("初始化 Diffusers 管线完成。")
+        gr.Info("初始化 Diffusers 管线完成。",duration=2)
+        
     @torch.inference_mode()
     def gradio_generate(self, prompt, image_prompt, controlnet_image, width, height, guidance,
                         num_steps, seed, true_gs, 
@@ -179,28 +197,50 @@ class DiffusersFluxPipeline:
         start_time = time.time()
         
         if not self.offload:
-            flush()
-            
-            if is_contronet_enable:
-                if self.first:
+            # flush()
+            if is_contronet_enable :
+                self.first = False
+                
+                if not self.control_pipe or local_path != self.loaded_control or (
+                    is_lora_enable and (lora_local_path != self.loaded_lora or lora_weight != self.loaded_lora_scale)
+                ):
+                    
+                    self.control_pipe = True
+                    
+                    self.is_loaded_control = True
+                    self.loaded_control = None
+                    
+                    self.is_loaded_lora = False
+                    self.loaded_lora=None
+                    self.loaded_lora_scale=None
+                    
                     del self.pipeline
                     if pipe is not None:
                         del pipe
-                    self.first=False
+                    
+                    flush_without_peak()
                 
-                controlnet_a = FluxControlNetModel.from_pretrained(local_path, torch_dtype=self.torch_dtype)
-                controlnet=FluxMultiControlNetModel([controlnet_a])
-                pipe = FluxControlNetPipeline.from_pretrained(self.models_dir, controlnet=controlnet, torch_dtype=torch.bfloat16)
-                if is_lora_enable:
-                    pipe.load_lora_weights(lora_local_path)
-                    pipe.fuse_lora(lora_scale=lora_weight)
-                pipe.to(self.device)
+                    self.loaded_control=local_path
+                    controlnet_a = FluxControlNetModel.from_pretrained(local_path, torch_dtype=self.torch_dtype)
+                    
+                    controlnet=FluxMultiControlNetModel([controlnet_a])
+                    self.pipeline = FluxControlNetPipeline.from_pretrained(self.models_dir, controlnet=controlnet, torch_dtype=torch.bfloat16)
+                    
+                    if is_lora_enable:
+                        pipe.load_lora_weights(lora_local_path)
+                        pipe.fuse_lora(lora_scale=lora_weight)
+                        
+                        self.is_loaded_lora = True
+                        self.loaded_lora=lora_local_path
+                        self.loaded_lora_scale=lora_weight
+                        
+                    pipe.to(self.device)
                 
                 control_image=load_image(controlnet_image) 
                 control_mode = control_weight
                 controlnet_conditioning_scale=0.5
                 
-                images=pipe(
+                images=self.pipeline(
                     prompt=prompt,
                     height=height,
                     width=width,
@@ -213,23 +253,43 @@ class DiffusersFluxPipeline:
                     generator=generator,
                     max_sequence_length= 256 if self.model_type=="flux-schnell" else 512,
                 ).images          
+            
             else:
-                if self.first is not True:
-                    del self.pipeline
+                if self.control_pipe is True or (
+                    is_lora_enable and (lora_local_path != self.loaded_lora or lora_weight != self.loaded_lora_scale)
+                ):
+                    self.control_pipe = False
+                    
+                    self.is_loaded_control=False
+                    self.loaded_control=None
+                    
+                    self.is_loaded_lora = False
+                    self.loaded_lora=None
+                    
+                    if self.first is not True:
+                        del self.pipeline
+                    
                     if pipe is not None:
                         del pipe
-                    flush()
-                    pipe = self.pipeline=FluxPipeline.from_pretrained(self.models_dir, torch_dtype=self.torch_dtype)
-                    self.first=True
-                else:
-                    flush()
-                    pipe = self.pipeline
-                if is_lora_enable:
-                    pipe.load_lora_weights(lora_local_path)
-                    pipe.fuse_lora(lora_scale=lora_weight)
-                pipe.to(self.device)
-                # pipe.enable_model_cpu_offload()
-                images = pipe(
+                    
+                    flush_without_peak()
+                    
+                    if self.first is not True:
+                        self.pipeline = FluxPipeline.from_pretrained(self.models_dir, torch_dtype=self.torch_dtype)
+                        self.first = True
+                    
+                    if is_lora_enable:
+                        self.first = False
+                        self.pipeline.load_lora_weights(lora_local_path)
+                        self.pipeline.fuse_lora(lora_scale=lora_weight)
+                        
+                        self.is_loaded_lora = True
+                        self.loaded_lora=lora_local_path
+                        self.loaded_lora_scale=lora_weight
+                        
+                self.pipeline.to(self.device)
+                
+                images = self.pipeline(
                     prompt=prompt, 
                     height=height, width=width,
                     num_inference_steps=num_steps, 
@@ -238,8 +298,11 @@ class DiffusersFluxPipeline:
                     max_sequence_length= 256 if self.model_type=="flux-schnell" else 512,
                 ).images
         else:
-            flush()
             if self.first is not True:
+                del self.pipeline
+                if pipe is not None:
+                    del pipe
+                flush()
                 self.text_encoder = CLIPTextModel.from_pretrained(self.models_dir,subfolder="text_encoder",torch_dtype=self.torch_dtype)
                 self.text_encoder_2 = T5EncoderModel.from_pretrained(self.models_dir,subfolder="text_encoder_2",torch_dtype=self.torch_dtype)
                 self.tokenizer = CLIPTokenizer.from_pretrained(self.models_dir, subfolder="tokenizer")
@@ -261,8 +324,8 @@ class DiffusersFluxPipeline:
                     vae=None,
                     revision="refs/pr/7",
                     torch_dtype=self.torch_dtype
-                )
-            else:
+                ).to(self.device)
+            elif self.first is not True:
                 self.pipeline = FluxPipeline.from_pretrained(
                     self.models_dir,
                     text_encoder=self.text_encoder,
@@ -273,8 +336,7 @@ class DiffusersFluxPipeline:
                     vae=None,
                     revision="refs/pr/7",
                     torch_dtype=self.torch_dtype
-                )
-                self.pipeline.to(self.device)
+                ).to(self.device)
             
             with torch.no_grad():
                 print("Encoding prompts.")
@@ -282,6 +344,7 @@ class DiffusersFluxPipeline:
                 prompt_embeds, pooled_prompt_embeds, text_ids = self.pipeline.encode_prompt(
                     prompt=prompt, prompt_2=None, max_sequence_length=256
                 )
+            
             self.first = False
             
             print("Type of the prompt embeds:",type(prompt_embeds))
