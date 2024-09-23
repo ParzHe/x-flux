@@ -1,4 +1,5 @@
 import os
+import re
 import pynvml
 import torch
 import gc
@@ -108,3 +109,80 @@ def save_images_with_prompt(
         json.dump(params, f, indent=4)
     
     return save_images(images,timestamp,output_folder=output_folder)
+
+def list_dirs(path):
+    if path is None or path == "None" or path == "":
+        return
+
+    if not os.path.exists(path):
+        path = os.path.dirname(path)
+        if not os.path.exists(path):
+            return
+
+    if not os.path.isdir(path):
+        path = os.path.dirname(path)
+
+    def natural_sort_key(s, regex=re.compile("([0-9]+)")):
+        return [
+            int(text) if text.isdigit() else text.lower() for text in regex.split(s)
+        ]
+
+    subdirs = [
+        (item, os.path.join(path, item))
+        for item in os.listdir(path)
+        if os.path.isdir(os.path.join(path, item))
+    ]
+    subdirs = [
+        filename
+        for item, filename in subdirs
+        if item[0] != "." and item not in ["__pycache__"]
+    ]
+    subdirs = sorted(subdirs, key=natural_sort_key)
+    if os.path.dirname(path) != "":
+        dirs = [os.path.dirname(path), path] + subdirs
+    else:
+        dirs = [path] + subdirs
+
+    if os.sep == "\\":
+        dirs = [d.replace("\\", "/") for d in dirs]
+    for d in dirs:
+        yield d
+
+def list_train_data_dirs():
+    current_train_data_dir = "."
+    return list(list_dirs(current_train_data_dir))
+
+def update_config(d, u):
+    for k, v in u.items():
+        if isinstance(v, dict):
+            d[k] = update_config(d.get(k, {}), v)
+        else:
+            # convert Gradio components to strings
+            if hasattr(v, 'value'):
+                d[k] = str(v.value)
+            else:
+                try:
+                    d[k] = int(v)
+                except (TypeError, ValueError):
+                    d[k] = str(v)
+    return d
+
+def remove_substring(A, B):
+    """
+    Remove the first occurrence of substring B from string A.
+
+    Parameters:
+    A (str): The original string to process.
+    B (str): The substring to find and remove from A.
+
+    Returns:
+    str: The string A with the first occurrence of B removed.
+    """
+    # Find the position of substring B in A
+    index = A.find(B)
+    if index != -1:
+        # If substring B is found, remove it
+        return A[:index] + A[index+len(B):]
+    else:
+        # If substring B is not found, return the original string A
+        return A

@@ -63,6 +63,40 @@ configs = {
             shift_factor=0.1159,
         ),
     ),
+    "flux-merged": ModelSpec(
+        repo_id="sayakpaul/FLUX.1-merged",
+        repo_id_ae="sayakpaul/FLUX.1-merged",
+        repo_flow="flux1-dev.safetensors",
+        repo_ae="ae.safetensors",
+        models_dir=os.getenv("FLUX_MERGED_DIR"),
+        ckpt_path=os.getenv("FLUX_MERGED"),
+        params=FluxParams(
+            in_channels=64,
+            vec_in_dim=768,
+            context_in_dim=4096,
+            hidden_size=3072,
+            mlp_ratio=4.0,
+            num_heads=24,
+            depth=19,
+            depth_single_blocks=38,
+            axes_dim=[16, 56, 56],
+            theta=10_000,
+            qkv_bias=True,
+            guidance_embed=True,
+        ),
+        ae_path=os.getenv("AE"),
+        ae_params=AutoEncoderParams(
+            resolution=256,
+            in_channels=3,
+            ch=128,
+            out_ch=3,
+            ch_mult=[1, 2, 4, 4],
+            num_res_blocks=2,
+            z_channels=16,
+            scale_factor=0.3611,
+            shift_factor=0.1159,
+        ),
+    ),
     "flux-dev-fp8": ModelSpec(
         repo_id="black-forest-labs/FLUX.1-dev",
         repo_id_ae="black-forest-labs/FLUX.1-dev",
@@ -198,7 +232,7 @@ class DiffusersFluxPipeline:
         
         if not self.offload:
             # flush()
-            if is_contronet_enable :
+            if is_contronet_enable and control_image != None:
                 self.first = False
                 
                 if not self.control_pipe or local_path != self.loaded_control or (
@@ -295,7 +329,7 @@ class DiffusersFluxPipeline:
                     num_inference_steps=num_steps, 
                     guidance_scale=true_gs,
                     generator=generator,
-                    max_sequence_length= 256 if self.model_type=="flux-schnell" else 512,
+                    max_sequence_length= 512 if self.model_type=="flux-dev" else 512,
                 ).images
         else:
             if self.first is not True:
