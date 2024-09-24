@@ -25,28 +25,35 @@ class LoRASpec:
     xflux_supported: bool | None
 
 lora_configs = {
-    "Anime": LoRASpec (
+    "黑神话：悟空": LoRASpec (
+        lora_name = "Black_Myth_Wukong",
+        lora_dir_or_rep = "../models/LoRA/FLUX-dev-lora-Black_Myth_Wukong_hyperrealism_v1.safetensors",
+        trigger_word = "aiyouxiketang",
+        rec_scale = 1.2,
+        xflux_supported = True,
+    ),
+    "日漫风": LoRASpec (
         lora_name = "Anime",
         lora_dir_or_rep = "../models/LoRA/anime_lora.safetensors",
         trigger_word = "anime",
         rec_scale = 0.9,
         xflux_supported = True,
     ),
-    "Art": LoRASpec(
+    "美漫风": LoRASpec(
         lora_name = "Art",
         lora_dir_or_rep = "../models/LoRA/art_lora.safetensors",
         trigger_word = "art",
         rec_scale = 0.9,
         xflux_supported = True,
     ),
-    "Disney": LoRASpec(
+    "迪斯尼风": LoRASpec(
         lora_name = "Disney",
         lora_dir_or_rep = "../models/LoRA/disney_lora.safetensors",
         trigger_word = "disney style",
         rec_scale = 0.9,
         xflux_supported = True,
     ),
-    "Furry": LoRASpec (
+    "毛茸风": LoRASpec (
         lora_name = "Furry",
         lora_dir_or_rep = "../models/LoRA/furry_lora.safetensors",
         trigger_word = "furry",
@@ -60,14 +67,14 @@ lora_configs = {
         rec_scale=0.9,
         xflux_supported = True,
     ),
-    "Realism": LoRASpec (
+    "写实风": LoRASpec (
         lora_name="Reslism",
         lora_dir_or_rep = "../models/LoRA/realism_lora.safetensors",
         trigger_word = "realism",
         rec_scale = 0.9,
         xflux_supported = True,
     ),
-    "Scenery": LoRASpec (
+    "风景": LoRASpec (
         lora_name="Scenery",
         lora_dir_or_rep = "../models/LoRA/scenery_lora.safetensors",
         trigger_word = "scenery style",
@@ -154,9 +161,9 @@ class casdao_xflux_ui:
         else:
             self.model_list=["flux-dev","flux-merged","flux-schnell"]
         if self.pipeline_type == "xflux":
-            self.lora_name_list=["Anime","Art","Disney","Furry","MJv6","Realism","Scenery"]
+            self.lora_name_list=["日漫风","美漫风","迪斯尼风","毛茸风","MJv6","写实风","风景"]
         else:
-            self.lora_name_list=["Anime","Art","Disney","Furry","MJv6","Realism","Scenery","Others"]
+            self.lora_name_list=["黑神话：悟空","日漫风","美漫风","迪斯尼风","毛茸风","MJv6","写实风","风景","其他"]
             
         self.pipeline, self.init_steps,self.init_gs=init_pipeline(pipeline_type,model_type,device,offload)
         self.controlnet_checkpoints=sorted(Path(self.ckpt_dir+"/Controlnet").glob("*.safetensors"))
@@ -243,6 +250,7 @@ class casdao_xflux_ui:
                         with gr.Accordion(label="提示词（Prompt）",open=True):
                             with gr.Row():
                                 prompt = gr.Textbox(
+                                    value="a man in armor with a beard and a beard, aiyouxiketang.",
                                     label="正面提示词（Positive Prompt）", 
                                     placeholder="使用英文输入正文提示词，即提示希望模型生成的内容",
                                     container=True)
@@ -257,6 +265,7 @@ class casdao_xflux_ui:
                                 )
                             gr.Examples(
                             examples=[
+                                "a man in armor with a beard and a beard",
                                 "a handsome asian woman in the city",
                                 "A cat holding a sign that says hello world",
                             ],
@@ -282,12 +291,12 @@ class casdao_xflux_ui:
                         with gr.Accordion(label="高级生成设置（Advanced Generation Options）",open=True):
                             with gr.Row():
                                 is_contronet_enable=gr.Checkbox(label="启用ControlNet",container=True,elem_classes="enable_button")
-                                is_lora_enable=gr.Checkbox(label="启用LoRA",container=True,elem_classes="enable_button")
+                                is_lora_enable=gr.Checkbox(value=True,label="启用LoRA",container=True,elem_classes="enable_button")
                                 is_ip_enable=gr.Checkbox(label="启用IP Adpater",container=True,elem_classes="enable_button",visible=True if self.pipeline_type=="xflux" else False)
                             
                             with gr.Column():
                                 # is_contronet_enable=gr.Checkbox(label="启用ControlNet",container=True,elem_classes="enable_button")
-                                with gr.Accordion("ControlNet 设置（需启用 ControlNet 才有效）", open=False, visible=False) as controlnet_options:
+                                with gr.Accordion("ControlNet 设置（需启用 ControlNet 才有效）", open=True, visible=False) as controlnet_options:
                                     # is_contronet_enable=gr.Checkbox(label="启用（Enable）",container=True,scale=1)
                                     with gr.Row():
                                         control_type = gr.Dropdown(["canny", "hed", "depth"], value="canny",label="Control 类型（type）",scale=1,visible=True if self.pipeline_type=="xflux" else False)
@@ -303,7 +312,7 @@ class casdao_xflux_ui:
                             
                             with gr.Column():
                                 # is_lora_enable=gr.Checkbox(label="启用LoRA",container=True,elem_classes="enable_button")
-                                with gr.Accordion("LoRA 设置（需启用 LoRA 才有效）", open=False, visible=False) as lora_options:
+                                with gr.Accordion("LoRA 设置（需启用 LoRA 才有效）", open=True, visible=True) as lora_options:
                                     # is_lora_enable=gr.Checkbox(label="启用（Enable）",container=True,scale=1)
                                     with gr.Row():
                                         lora_dropdown = gr.Dropdown(
@@ -323,7 +332,7 @@ class casdao_xflux_ui:
                                             interactive=False,
                                         )
                                     with gr.Accordion(
-                                        label="LoRA 模型地址（如果选择 Others 可修改）", 
+                                        label="LoRA 模型地址（如果选择其他可修改）", 
                                         open=False,
                                     ) as lora_advanced_options:
                                         with gr.Row():
@@ -335,9 +344,9 @@ class casdao_xflux_ui:
                                                 scale=4,
                                                 interactive=False,
                                             )
-                                            refresh_lora_list_btn=gr.Button(value="",icon="../assets/icons/refresh.png",scale=1)
+                                            refresh_lora_list_btn=gr.Button(value="刷新",icon="../assets/icons/refresh.png",scale=1)
                                             
-                                    lora_weight = gr.Slider(0.0, 1.0, 0.9, step=0.1, label="LoRA 权重（Scale）", interactive=True,scale=3)
+                                    lora_weight = gr.Slider(0.0, 3.0, lora_configs["黑神话：悟空"].rec_scale, step=0.1, label="LoRA 权重（Scale）", interactive=True,scale=3)
                                         
                             with gr.Column():
                                 # is_ip_enable=gr.Checkbox(label="启用IP Adpater",container=True,elem_classes="enable_button",visible=True if self.pipeline_type=="xflux" else False)
@@ -466,7 +475,17 @@ class casdao_xflux_ui:
                 
                 def update_lora_selection(is_enable,lora_drop, prompt,trigger_word):
                     temp_prompt=remove_substring(prompt,f", {self.lora_trigger_word}.")
-                    if lora_drop != "Others":
+                    
+                    if lora_drop == "黑神话：悟空":
+                        self.lora_trigger_word=lora_configs[lora_drop].trigger_word
+                        outputs=[
+                            gr.update(), # lora advanced options
+                            gr.update(value=lora_configs[lora_drop].lora_dir_or_rep,interactive=False), # lora dir
+                            gr.update(value=lora_configs[lora_drop].trigger_word,interactive=False), # trig word
+                            gr.update(value=lora_configs[lora_drop].rec_scale, maximum=3.0), # lora weight
+                            gr.update(value=f"{temp_prompt}, {lora_configs[lora_drop].trigger_word}." if is_enable else prompt)
+                        ]
+                    elif lora_drop != "其他":
                         self.lora_trigger_word=lora_configs[lora_drop].trigger_word
                         outputs=[
                             gr.update(), # lora advanced options

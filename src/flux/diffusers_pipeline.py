@@ -214,7 +214,7 @@ class DiffusersFluxPipeline:
         
         print("初始化 Diffusers 管线完成。")
         gr.Info("初始化 Diffusers 管线完成。",duration=2)
-        
+    
     @torch.inference_mode()
     def gradio_generate(self, prompt, image_prompt, controlnet_image, width, height, guidance,
                         num_steps, seed, true_gs, 
@@ -230,6 +230,36 @@ class DiffusersFluxPipeline:
         pipe=None
         start_time = time.time()
         
+        def lora_component(is_enable,lora_path,lora_scale):
+            if is_enable:
+                if lora_path != self.loaded_lora:
+                    if not os.path.isfile(lora_path):
+                        gr.Error("这个模型不存在, 请输入正确的模型地址")
+                            
+                    if self.loaded_lora != None:
+                        print("Unloading lora...")
+                        self.pipeline.unfuse_lora()
+                        self.pipeline.unload_lora_weights()
+                        print("Successfully unloaded!")
+                                
+                    self.pipeline.load_lora_weights(lora_path)
+                    self.pipeline.fuse_lora(lora_scale=lora_scale)  
+                elif lora_scale!=self.loaded_lora_scale:
+                    print("Change LoRA scale...")
+                    self.pipeline.unfuse_lora()
+                    self.pipeline.fuse_lora(lora_scale=lora_scale)
+                    print("Change successfully")
+                        
+                self.is_loaded_lora = True
+                self.loaded_lora=lora_path
+                self.loaded_lora_scale=lora_scale
+            elif self.loaded_lora != None:
+                self.pipeline.unfuse_lora()
+                self.pipeline.unload_lora_weights()
+                self.is_loaded_lora = False
+                self.loaded_lora=None
+                self.loaded_lora_scale=None
+            
         if not self.offload:
             # flush()
             if is_contronet_enable and control_image != None:
@@ -264,29 +294,7 @@ class DiffusersFluxPipeline:
                 control_mode = control_weight
                 controlnet_conditioning_scale=0.5
                 
-                if is_lora_enable:
-                    if lora_local_path != self.loaded_lora:
-                        if not os.path.isfile(lora_local_path):
-                            gr.Error("这个模型不存在, 请输入正确的模型地址")
-                        
-                        if self.loaded_lora != None:
-                            self.pipeline.unloaded_lora_weights()
-                            
-                        self.pipeline.load_lora_weights(lora_local_path)
-                        self.pipeline.fuse_lora(lora_scale=lora_weight)
-                        self.pipeline.set_lora_device(device=self.device)     
-                    elif lora_weight!=self.loaded_lora_scale:
-                        self.pipeline.unfuse_lora()
-                        self.pipeline.fuse_lora(lora_scale=lora_weight)
-                    
-                    self.is_loaded_lora = True
-                    self.loaded_lora=lora_local_path
-                    self.loaded_lora_scale=lora_weight
-                elif self.loaded_lora != None:
-                    self.pipeline.unloaded_lora_weights()
-                    self.is_loaded_lora = False
-                    self.loaded_lora=None
-                    self.loaded_lora_scale=None
+                lora_component(is_enable=is_lora_enable,lora_path=lora_local_path,lora_scale=lora_weight)
                     
                 images=self.pipeline(
                     prompt=prompt,
@@ -325,30 +333,7 @@ class DiffusersFluxPipeline:
                         
                     self.pipeline.to(self.device)
                 
-                if is_lora_enable:
-                    if lora_local_path != self.loaded_lora:
-                        if not os.path.isfile(lora_local_path):
-                            gr.Error("这个模型不存在, 请输入正确的模型地址")
-                        
-                        if self.loaded_lora != None:
-                            self.pipeline.unloaded_lora_weights()
-                            
-                        self.pipeline.load_lora_weights(lora_local_path)
-                        self.pipeline.fuse_lora(lora_scale=lora_weight)
-                        self.pipeline.set_lora_device(device=self.device)     
-                    elif lora_weight!=self.loaded_lora_scale:
-                        self.pipeline.unfuse_lora()
-                        self.pipeline.fuse_lora(lora_scale=lora_weight)
-                    
-                    self.is_loaded_lora = True
-                    self.loaded_lora=lora_local_path
-                    self.loaded_lora_scale=lora_weight
-                
-                elif self.loaded_lora != None:
-                    self.pipeline.unloaded_lora_weights()
-                    self.is_loaded_lora = False
-                    self.loaded_lora=None
-                    self.loaded_lora_scale=None
+                lora_component(is_enable=is_lora_enable,lora_path=lora_local_path,lora_scale=lora_weight)
                 
                 images = self.pipeline(
                     prompt=prompt, 
