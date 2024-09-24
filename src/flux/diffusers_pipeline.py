@@ -235,9 +235,7 @@ class DiffusersFluxPipeline:
             if is_contronet_enable and control_image != None:
                 self.first = False
                 
-                if not self.control_pipe or local_path != self.loaded_control or (
-                    is_lora_enable and (lora_local_path != self.loaded_lora or lora_weight != self.loaded_lora_scale)
-                ):
+                if not self.control_pipe or local_path != self.loaded_control:
                     
                     self.control_pipe = True
                     
@@ -259,21 +257,37 @@ class DiffusersFluxPipeline:
                     
                     controlnet=FluxMultiControlNetModel([controlnet_a])
                     self.pipeline = FluxControlNetPipeline.from_pretrained(self.models_dir, controlnet=controlnet, torch_dtype=torch.bfloat16)
-                    
-                    if is_lora_enable:
-                        pipe.load_lora_weights(lora_local_path)
-                        pipe.fuse_lora(lora_scale=lora_weight)
                         
-                        self.is_loaded_lora = True
-                        self.loaded_lora=lora_local_path
-                        self.loaded_lora_scale=lora_weight
-                        
-                    pipe.to(self.device)
+                    self.pipeline.to(self.device)
                 
                 control_image=load_image(controlnet_image) 
                 control_mode = control_weight
                 controlnet_conditioning_scale=0.5
                 
+                if is_lora_enable:
+                    if lora_local_path != self.loaded_lora:
+                        if not os.path.isfile(lora_local_path):
+                            gr.Error("这个模型不存在, 请输入正确的模型地址")
+                        
+                        if self.loaded_lora != None:
+                            self.pipeline.unloaded_lora_weights()
+                            
+                        self.pipeline.load_lora_weights(lora_local_path)
+                        self.pipeline.fuse_lora(lora_scale=lora_weight)
+                        self.pipeline.set_lora_device(device=self.device)     
+                    elif lora_weight!=self.loaded_lora_scale:
+                        self.pipeline.unfuse_lora()
+                        self.pipeline.fuse_lora(lora_scale=lora_weight)
+                    
+                    self.is_loaded_lora = True
+                    self.loaded_lora=lora_local_path
+                    self.loaded_lora_scale=lora_weight
+                elif self.loaded_lora != None:
+                    self.pipeline.unloaded_lora_weights()
+                    self.is_loaded_lora = False
+                    self.loaded_lora=None
+                    self.loaded_lora_scale=None
+                    
                 images=self.pipeline(
                     prompt=prompt,
                     height=height,
@@ -289,9 +303,7 @@ class DiffusersFluxPipeline:
                 ).images          
             
             else:
-                if self.control_pipe is True or (
-                    is_lora_enable and (lora_local_path != self.loaded_lora or lora_weight != self.loaded_lora_scale)
-                ):
+                if self.control_pipe is True:
                     self.control_pipe = False
                     
                     self.is_loaded_control=False
@@ -299,29 +311,44 @@ class DiffusersFluxPipeline:
                     
                     self.is_loaded_lora = False
                     self.loaded_lora=None
+                    self.loaded_lora_scale=None
                     
-                    if self.first is not True:
-                        del self.pipeline
-                    
+                    del self.pipeline
                     if pipe is not None:
                         del pipe
                     
-                    flush_without_peak()
+                    flush()
                     
-                    if self.first is not True:
+                    if self.first is False:
                         self.pipeline = FluxPipeline.from_pretrained(self.models_dir, torch_dtype=self.torch_dtype)
                         self.first = True
-                    
-                    if is_lora_enable:
-                        self.first = False
+                        
+                    self.pipeline.to(self.device)
+                
+                if is_lora_enable:
+                    if lora_local_path != self.loaded_lora:
+                        if not os.path.isfile(lora_local_path):
+                            gr.Error("这个模型不存在, 请输入正确的模型地址")
+                        
+                        if self.loaded_lora != None:
+                            self.pipeline.unloaded_lora_weights()
+                            
                         self.pipeline.load_lora_weights(lora_local_path)
                         self.pipeline.fuse_lora(lora_scale=lora_weight)
-                        
-                        self.is_loaded_lora = True
-                        self.loaded_lora=lora_local_path
-                        self.loaded_lora_scale=lora_weight
-                        
-                self.pipeline.to(self.device)
+                        self.pipeline.set_lora_device(device=self.device)     
+                    elif lora_weight!=self.loaded_lora_scale:
+                        self.pipeline.unfuse_lora()
+                        self.pipeline.fuse_lora(lora_scale=lora_weight)
+                    
+                    self.is_loaded_lora = True
+                    self.loaded_lora=lora_local_path
+                    self.loaded_lora_scale=lora_weight
+                
+                elif self.loaded_lora != None:
+                    self.pipeline.unloaded_lora_weights()
+                    self.is_loaded_lora = False
+                    self.loaded_lora=None
+                    self.loaded_lora_scale=None
                 
                 images = self.pipeline(
                     prompt=prompt, 
@@ -332,7 +359,7 @@ class DiffusersFluxPipeline:
                     max_sequence_length= 512 if self.model_type=="flux-dev" else 512,
                 ).images
         else:
-            if self.first is not True:
+            if self.first is False:
                 del self.pipeline
                 if pipe is not None:
                     del pipe
