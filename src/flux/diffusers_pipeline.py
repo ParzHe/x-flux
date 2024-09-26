@@ -243,7 +243,8 @@ class DiffusersFluxPipeline:
                         print("Successfully unloaded!")
                                 
                     self.pipeline.load_lora_weights(lora_path)
-                    self.pipeline.fuse_lora(lora_scale=lora_scale)  
+                    self.pipeline.fuse_lora(lora_scale=lora_scale)
+                    self.pipeline.to(self.device)
                 elif lora_scale!=self.loaded_lora_scale:
                     print("Change LoRA scale...")
                     self.pipeline.unfuse_lora()
@@ -262,7 +263,7 @@ class DiffusersFluxPipeline:
             
         if not self.offload:
             # flush()
-            if is_contronet_enable and control_image != None:
+            if is_contronet_enable and controlnet_image is not None:
                 self.first = False
                 
                 if not self.control_pipe or local_path != self.loaded_control:
@@ -285,8 +286,8 @@ class DiffusersFluxPipeline:
                     self.loaded_control=local_path
                     controlnet_a = FluxControlNetModel.from_pretrained(local_path, torch_dtype=self.torch_dtype)
                     
-                    controlnet=FluxMultiControlNetModel([controlnet_a])
-                    self.pipeline = FluxControlNetPipeline.from_pretrained(self.models_dir, controlnet=controlnet, torch_dtype=torch.bfloat16)
+                    # controlnet=FluxMultiControlNetModel([controlnet_a])
+                    self.pipeline = FluxControlNetPipeline.from_pretrained(self.models_dir, controlnet=controlnet_a, torch_dtype=torch.bfloat16)
                         
                     self.pipeline.to(self.device)
                 
@@ -302,7 +303,7 @@ class DiffusersFluxPipeline:
                     width=width,
                     num_inference_steps=num_steps,
                     guidance_scale=true_gs,
-                    control_image=control_image,
+                    control_image=[control_image],
                     controlnet_conditioning_scale=controlnet_conditioning_scale,
                     control_mode=control_mode,
                     num_images_per_prompt=1,
@@ -321,7 +322,8 @@ class DiffusersFluxPipeline:
                     self.loaded_lora=None
                     self.loaded_lora_scale=None
                     
-                    del self.pipeline
+                    if self.pipeline is not None:
+                        del self.pipeline
                     if pipe is not None:
                         del pipe
                     
@@ -329,19 +331,18 @@ class DiffusersFluxPipeline:
                     
                     if self.first is False:
                         self.pipeline = FluxPipeline.from_pretrained(self.models_dir, torch_dtype=self.torch_dtype)
+                        self.pipeline.to(self.device)
                         self.first = True
                         
-                    self.pipeline.to(self.device)
-                
                 lora_component(is_enable=is_lora_enable,lora_path=lora_local_path,lora_scale=lora_weight)
                 
-                images = self.pipeline(
+                images = self.pipeline (
                     prompt=prompt, 
                     height=height, width=width,
                     num_inference_steps=num_steps, 
                     guidance_scale=true_gs,
                     generator=generator,
-                    max_sequence_length= 512 if self.model_type=="flux-dev" else 512,
+                    max_sequence_length= 512 if self.model_type=="flux-dev" else 256,
                 ).images
         else:
             if self.first is False:
@@ -354,12 +355,12 @@ class DiffusersFluxPipeline:
                 self.tokenizer = CLIPTokenizer.from_pretrained(self.models_dir, subfolder="tokenizer")
                 self.tokenizer_2 = T5TokenizerFast.from_pretrained(self.models_dir, subfolder="tokenizer_2")
             
-            if is_contronet_enable:
+            if is_contronet_enable and controlnet_image is not None:
                 if self.first is True:
                     del self.pipeline
                     flush()
                 controlnet_a = FluxControlNetModel.from_pretrained(local_path, torch_dtype=self.torch_dtype)
-                controlnet=FluxMultiControlNetModel([controlnet_a])
+                # controlnet=FluxMultiControlNetModel([controlnet_a])
                 self.pipeline = FluxControlNetPipeline.from_pretrained(
                     self.models_dir,
                     text_encoder=self.text_encoder,
@@ -403,7 +404,7 @@ class DiffusersFluxPipeline:
                 
             flush_without_peak()
             
-            if is_contronet_enable:
+            if is_contronet_enable and controlnet_image is not None:
                 pipe = FluxControlNetPipeline.from_pretrained(
                     self.models_dir,
                     text_encoder=None,
@@ -411,7 +412,7 @@ class DiffusersFluxPipeline:
                     tokenizer=None,
                     tokenizer_2=None,
                     vae=None,
-                    controlnet=controlnet,
+                    controlnet=controlnet_a,
                     torch_dtype=self.torch_dtype,
                 ).to(self.device)
             else:        
@@ -432,7 +433,7 @@ class DiffusersFluxPipeline:
             print("Running denoising...")
             gr.Info("开始降噪...",duration=3)
             
-            if is_contronet_enable:
+            if is_contronet_enable and controlnet_image is not None:
                 control_image=load_image(controlnet_image) 
                 controlnet_conditioning_scale=0.5
                 control_mode = control_weight
@@ -443,7 +444,7 @@ class DiffusersFluxPipeline:
                     width=width,
                     num_inference_steps=num_steps,
                     guidance_scale=true_gs,
-                    control_image=control_image,
+                    control_image=[control_image],
                     controlnet_conditioning_scale=controlnet_conditioning_scale,
                     control_mode=control_mode,
                     num_images_per_prompt=1,

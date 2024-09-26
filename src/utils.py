@@ -186,3 +186,17 @@ def remove_substring(A, B):
     else:
         # If substring B is not found, return the original string A
         return A
+
+def get_subdirectories_name(path: str):
+    # 使用os.listdir获取指定路径下的所有文件和文件夹
+    directories_names = [d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d))]
+    return directories_names
+
+def get_subdirectories(path: str):
+    # 使用os.listdir获取指定路径下的所有文件和文件夹
+    all_items = os.listdir(path)
+    directories=[]
+    for d in all_items:
+        if os.path.isdir(os.path.join(path, d)):
+            directories.append(os.path.join(path, d))
+    return directories

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from src.flux.xflux_pipeline import XFluxPipeline
 from src.flux.diffusers_pipeline import DiffusersFluxPipeline
-from src.utils import get_gpu_mem_info, flush, list_train_data_dirs,update_config,remove_substring
+from src.utils import get_gpu_mem_info, flush, list_train_data_dirs,update_config,remove_substring,get_subdirectories
 
 from dataclasses import dataclass
 
@@ -21,16 +21,49 @@ class LoRASpec:
     lora_name: str | None
     lora_dir_or_rep: str | None
     trigger_word: str | None
-    rec_scale: float | None
-    xflux_supported: bool | None
+    min_scale: float = 0.0
+    max_scale: float = 2.0
+    rec_scale: float = 0.9
+    xflux_supported: bool = False
 
 lora_configs = {
+    "电影质感": LoRASpec (
+        lora_name = "Film Portrait",
+        lora_dir_or_rep = "../models/LoRA/filmfotos.safetensors",
+        trigger_word = "filmfotos, film grain, reversal film photography",
+        rec_scale = 0.9,
+        xflux_supported = False,
+    ),
+    "手机上的微缩景观": LoRASpec (
+        lora_name = "Micro-landscape-on-Mobile-Phone",
+        lora_dir_or_rep = "../models/LoRA/FLUX-dev-lora-micro-landscape.safetensors",
+        trigger_word = "phone",
+        min_scale = 0.6,
+        max_scale = 0.9,
+        rec_scale = 0.75,
+        xflux_supported = False,
+    ),
     "黑神话：悟空": LoRASpec (
-        lora_name = "Black_Myth_Wukong",
+        lora_name = "Black Myth: Wukong",
         lora_dir_or_rep = "../models/LoRA/FLUX-dev-lora-Black_Myth_Wukong_hyperrealism_v1.safetensors",
         trigger_word = "aiyouxiketang",
+        max_scale= 3.0,
         rec_scale = 1.2,
-        xflux_supported = True,
+        xflux_supported = False,
+    ),
+    "Logo设计": LoRASpec(
+        lora_name = "Logo Design",
+        lora_dir_or_rep = "../models/LoRA/FLUX-dev-lora-Logo-Design.safetensors",
+        trigger_word = "wablogo, logo, Minimalist",
+        rec_scale = 0.8,
+        xflux_supported = False,
+    ),
+    "国风": LoRASpec (
+        lora_name = "China Style by 轻松 (qszero) from Casdao",
+        lora_dir_or_rep = "../models/LoRA/chinastyle_by_qszero.safetensors",
+        trigger_word = "chinastyle",
+        rec_scale = 1.0,
+        xflux_supported = False,
     ),
     "日漫风": LoRASpec (
         lora_name = "Anime",
@@ -163,10 +196,10 @@ class casdao_xflux_ui:
         if self.pipeline_type == "xflux":
             self.lora_name_list=["日漫风","美漫风","迪斯尼风","毛茸风","MJv6","写实风","风景"]
         else:
-            self.lora_name_list=["黑神话：悟空","日漫风","美漫风","迪斯尼风","毛茸风","MJv6","写实风","风景","其他"]
+            self.lora_name_list=["黑神话：悟空","国风","日漫风","美漫风","Logo设计","电影质感","迪斯尼风","毛茸风","MJv6","写实风","风景","手机上的微缩景观","其他"]
             
         self.pipeline, self.init_steps,self.init_gs=init_pipeline(pipeline_type,model_type,device,offload)
-        self.controlnet_checkpoints=sorted(Path(self.ckpt_dir+"/Controlnet").glob("*.safetensors"))
+        self.controlnet_checkpoints=sorted(Path(self.ckpt_dir+"/Controlnet").glob("*.safetensors")) if pipeline_type == "xflux" else get_subdirectories(self.ckpt_dir+"/Controlnet")
         self.lora_checkpoints=sorted(Path(self.ckpt_dir+"/LoRA").glob("*.safetensors"))
         self.ip_checkpoints=sorted(Path(self.ckpt_dir+"/IP_Adapter").glob("*.safetensors"))
         
@@ -308,7 +341,7 @@ class casdao_xflux_ui:
                                         )
                                         refresh_control_list_btn=gr.Button(value="",icon="../assets/icons/refresh.png",scale=1)
                                     control_weight = gr.Slider(0.0, 1.0 if self.pipeline_type=="xflux" else 3.0, 0.8, step=0.1, label="Controlnet 权重（weight）", interactive=True)
-                                    controlnet_image = gr.Image(label="输入的 Controlnet 图片", visible=True, interactive=True)
+                                    controlnet_image = gr.Image(format="png",label="输入的 Controlnet 图片", visible=True, interactive=True,type="numpy" if self.pipeline_type=="xflux" else "filepath")
                             
                             with gr.Column():
                                 # is_lora_enable=gr.Checkbox(label="启用LoRA",container=True,elem_classes="enable_button")
@@ -379,21 +412,29 @@ class casdao_xflux_ui:
                     del self.pipeline
                     flush()
                     if pipeline_type=="xflux":
-                        self.pipeline=XFluxPipeline(model_type, device, offload)
+                        self.pipeline=XFluxPipeline("flux-dev" if model_type=="flux-merged" else model_type, device, offload)
                         enable_xflux_funcitons=True
                     else:
                         self.pipeline=DiffusersFluxPipeline(model_type,device,offload)
                         enable_xflux_funcitons=False
                     gr.Info("切换Flux管线完成！",duration=2)
                     
+                    self.controlnet_checkpoints=sorted(Path(self.ckpt_dir+"/Controlnet").glob("*.safetensors")) if pipeline_type == "xflux" else get_subdirectories(self.ckpt_dir+"/Controlnet")
+                    
                     outputs=[
                         pipeline_type,
+                        gr.update(
+                            choices=["flux-dev","flux-dev-fp8","flux-schnell"] if pipeline_type=="xflux" else ["flux-dev","flux-merged","flux-schnell"],
+                            value="flux-dev" if pipeline_type=="xflux" and model_type=="flux-merged" else model_type,
+                        ),
                         gr.update(visible=enable_xflux_funcitons,value = False if enable_xflux_funcitons== False else is_ip_enable), # is_ip_enable
                         gr.update(visible=enable_xflux_funcitons), # neagetive prompt
                         gr.update(visible=enable_xflux_funcitons), # timesteps
                         gr.update(visible=enable_xflux_funcitons), # guidance
                         gr.update(visible=enable_xflux_funcitons), # control_type
+                        gr.update(value=self.controlnet_checkpoints[1],choices=self.controlnet_checkpoints),
                         gr.update(maximum=1.0 if pipeline_type=="xflux" else 3.0), # control_weight
+                        gr.update(type="numpy" if pipeline_type=="xflux" else "filepath"), # control_image
                         gr.update(maximum=1.0 if pipeline_type=="xflux" else 3.0), # LoRA weight
                         gr.update(visible=enable_xflux_funcitons), # ip_options
                     ]
@@ -403,11 +444,17 @@ class casdao_xflux_ui:
                 pipeline_dropdown.change(
                     fn=update_pipeline,
                     inputs=[pipeline_dropdown,model_checkpoint,device_dropdown,offload_checkbox],
-                    outputs=[pipeline_dropdown,is_ip_enable,neg_prompt,timestep_to_start_cfg,guidance,control_type,control_weight,lora_weight,ip_options]
+                    outputs=[
+                        pipeline_dropdown,model_checkpoint,
+                        is_ip_enable,neg_prompt,timestep_to_start_cfg,guidance,
+                        control_type,local_path,control_weight,controlnet_image,
+                        lora_weight,ip_options
+                    ]
                 )
                 
                 def update_model(pipeline_type, model_type, device, offload):
                     gr.Info("切换Flux模型中...",duration=5)
+                    flush()
                     del self.pipeline
                     flush()
                     if pipeline_type=="xflux":
@@ -418,15 +465,15 @@ class casdao_xflux_ui:
                     
                     if model_type == "flux-schnell":
                         steps=4
-                        guidance=0,
+                        guidance=0
                         g_interactive=False,
                     elif model_type == "flux-merged":
                         steps=6
-                        guidance=3.5,
+                        guidance=3.5
                         g_interactive=True
                     else:
                         steps=28
-                        guidance=3.5,
+                        guidance=3.5
                         g_interactive=True,
                     
                     if self.gpu_mem_total < 25:
@@ -450,13 +497,13 @@ class casdao_xflux_ui:
                     outputs=[controlnet_options],
                 )
                 
-                def refresh_control_list():
-                    self.controlnet_checkpoints=sorted(Path(self.ckpt_dir+"/Controlnet").glob("*.safetensors"))
+                def refresh_control_list(pipeline):
+                    self.controlnet_checkpoints=sorted(Path(self.ckpt_dir+"/Controlnet").glob("*.safetensors")) if pipeline=="xflux" else get_subdirectories(self.ckpt_dir+"/Controlnet")
                     return gr.update(choices=self.controlnet_checkpoints)
                 
                 refresh_control_list_btn.click(
                     fn=refresh_control_list,
-                    inputs=[],
+                    inputs=[pipeline_dropdown],
                     outputs=[local_path]
                 )
                 
@@ -476,22 +523,13 @@ class casdao_xflux_ui:
                 def update_lora_selection(is_enable,lora_drop, prompt,trigger_word):
                     temp_prompt=remove_substring(prompt,f", {self.lora_trigger_word}.")
                     
-                    if lora_drop == "黑神话：悟空":
+                    if lora_drop in lora_configs.keys():
                         self.lora_trigger_word=lora_configs[lora_drop].trigger_word
                         outputs=[
                             gr.update(), # lora advanced options
                             gr.update(value=lora_configs[lora_drop].lora_dir_or_rep,interactive=False), # lora dir
                             gr.update(value=lora_configs[lora_drop].trigger_word,interactive=False), # trig word
-                            gr.update(value=lora_configs[lora_drop].rec_scale, maximum=3.0), # lora weight
-                            gr.update(value=f"{temp_prompt}, {lora_configs[lora_drop].trigger_word}." if is_enable else prompt)
-                        ]
-                    elif lora_drop != "其他":
-                        self.lora_trigger_word=lora_configs[lora_drop].trigger_word
-                        outputs=[
-                            gr.update(), # lora advanced options
-                            gr.update(value=lora_configs[lora_drop].lora_dir_or_rep,interactive=False), # lora dir
-                            gr.update(value=lora_configs[lora_drop].trigger_word,interactive=False), # trig word
-                            gr.update(value=lora_configs[lora_drop].rec_scale, maximum=1.0), # lora weight
+                            gr.update(minimum=lora_configs[lora_drop].min_scale,maximum=lora_configs[lora_drop].max_scale,value=lora_configs[lora_drop].rec_scale, ), # lora weight
                             gr.update(value=f"{temp_prompt}, {lora_configs[lora_drop].trigger_word}." if is_enable else prompt)
                         ]
                     else:
@@ -499,7 +537,7 @@ class casdao_xflux_ui:
                             gr.update(open=True), # lora advanced options
                             gr.update(interactive=True), # lora dir
                             gr.update(interactive=True), # trig_word
-                            gr.update(maximum=3.0), # lora scale
+                            gr.update(minimum=0.0,maximum=3.0), # lora scale
                             gr.update(value=f"{temp_prompt}, {trigger_word}." if is_enable else prompt)
                         ]
                     
