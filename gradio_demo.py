@@ -37,7 +37,7 @@ lora_configs = {
     "手机上的微缩景观": LoRASpec (
         lora_name = "Micro-landscape-on-Mobile-Phone",
         lora_dir_or_rep = "../models/LoRA/FLUX-dev-lora-micro-landscape.safetensors",
-        trigger_word = "phone",
+        trigger_word = "phone screen",
         min_scale = 0.6,
         max_scale = 0.9,
         rec_scale = 0.75,
@@ -227,7 +227,7 @@ class casdao_xflux_ui:
 
     def create_demo(self):
         with gr.Blocks(title="Flux-WebUI",css=self.css) as demo:
-            gr.Markdown(f"# Flux-WebUI：由 Casdao 推出的 Flux-WebUI")
+            gr.Markdown(f"# Flux-WebUI：由 Casdao 在 X-Flux 基础上推出的的 Flux-WebUI")
             gr.HTML(
                 """
                 <div>
@@ -235,6 +235,11 @@ class casdao_xflux_ui:
                         <div class="shield">
                             <a href="https://ai.casdao.com/">
                                 <img src="https://img.shields.io/badge/Casdao-%E6%99%BA%E7%AE%97%E7%A9%BA%E9%97%B4-blue" alt="算力互联-智算空间" height="50">
+                            </a>
+                        </div>
+                        <div class="shield">
+                            <a href="https://blackforestlabs.ai/">
+                                <img src="https://img.shields.io/badge/Black_Forest_Labs-grey" alt="Black Forest Labs" height="50">
                             </a>
                         </div>
                         <div class="shield">
@@ -256,7 +261,7 @@ class casdao_xflux_ui:
                 </div>
                 """
             )
-            gr.Markdown("支持X-Flux 和 Diffusers 两种管线。LoRA，ControlNet 的 Flux-WebUI")
+            gr.Markdown("可以使用 [X-Flux](https://github.com/XLabs-AI/x-flux) 和 [Diffusers](https://github.com/huggingface/diffusers) 两种管线推理。支持载入 LoRA，ControlNet 的 Flux-WebUI")
             with gr.Row():
                 pipeline_dropdown=gr.Dropdown(
                     label="推理管线（Pipeline）",
@@ -283,10 +288,11 @@ class casdao_xflux_ui:
                         with gr.Accordion(label="提示词（Prompt）",open=True):
                             with gr.Row():
                                 prompt = gr.Textbox(
-                                    value="a man in armor with a beard and a beard, aiyouxiketang.",
+                                    value="a man in armor with a beard and a beard, aiyouxiketang." if self.gpu_mem_total>25 else "a handsome asian woman in the city",
                                     label="正面提示词（Positive Prompt）", 
                                     placeholder="使用英文输入正文提示词，即提示希望模型生成的内容",
-                                    container=True)
+                                    container=True,
+                                )
                             with gr.Row():
                                 neg_prompt = gr.Textbox(
                                     label="负面提示词（Negative Prompt）", 
@@ -301,6 +307,8 @@ class casdao_xflux_ui:
                                 "a man in armor with a beard and a beard",
                                 "a handsome asian woman in the city",
                                 "A cat holding a sign that says hello world",
+                                "A girl in city, 25 years old, cool, futuristic",
+                                "This poster shows a smartphone against a dark background. The phone screen reveals a miniature stereoscopic scene of eiffel tower, Paris, seamlessly integrated into the phone’s frame"
                             ],
                             inputs=[prompt],
                             label="Prompt 示例",
@@ -309,7 +317,7 @@ class casdao_xflux_ui:
                         with gr.Accordion("生成设置（Generation Options）", open=True):
                             with gr.Row():
                                 width = gr.Slider(512, 2048, 1024, step=16, label="宽度（Width）")
-                                height = gr.Slider(512, 2048, 1024, step=16, label="高度（Height）")
+                                height = gr.Slider(512, 2048, 768, step=16, label="高度（Height）")
                             
                             with gr.Row():
                                 num_steps = gr.Slider(1, 100, self.init_steps, step=1, label="迭代步数（Number of steps）",info="如果画面模糊，请将迭代步数调大")
@@ -321,10 +329,10 @@ class casdao_xflux_ui:
                             
                             seed = gr.Textbox(-1, label="随机种子（Seed，-1 为随机）")
                         
-                        with gr.Accordion(label="高级生成设置（Advanced Generation Options）",open=True):
+                        with gr.Accordion(label="高级生成设置（Advanced Generation Options）", open=True, visible = True if self.gpu_mem_total > 25 else False):
                             with gr.Row():
-                                is_contronet_enable=gr.Checkbox(label="启用ControlNet",container=True,elem_classes="enable_button")
-                                is_lora_enable=gr.Checkbox(value=True,label="启用LoRA",container=True,elem_classes="enable_button")
+                                is_contronet_enable=gr.Checkbox(value=False, label="启用ControlNet",container=True,elem_classes="enable_button",visible= True if self.pipeline_type == "xflux" or self.offload == True else False)
+                                is_lora_enable=gr.Checkbox(value=True if self.gpu_mem_total > 25 else False, label="启用LoRA",container=True,elem_classes="enable_button")
                                 is_ip_enable=gr.Checkbox(label="启用IP Adpater",container=True,elem_classes="enable_button",visible=True if self.pipeline_type=="xflux" else False)
                             
                             with gr.Column():
@@ -340,7 +348,9 @@ class casdao_xflux_ui:
                                             scale=4
                                         )
                                         refresh_control_list_btn=gr.Button(value="",icon="../assets/icons/refresh.png",scale=1)
-                                    control_weight = gr.Slider(0.0, 1.0 if self.pipeline_type=="xflux" else 3.0, 0.8, step=0.1, label="Controlnet 权重（weight）", interactive=True)
+                                    with gr.Row():
+                                        control_weight = gr.Slider(0.0, 1.0 if self.pipeline_type=="xflux" else 3.0, 0.8, step=0.1, label="Controlnet 权重（Mode）", interactive=True)
+                                        conditioning_scale = gr.Slider(0.0, 1.0, 0.6, step=0.1, label="Conditioning Scale", interactive=True)
                                     controlnet_image = gr.Image(format="png",label="输入的 Controlnet 图片", visible=True, interactive=True,type="numpy" if self.pipeline_type=="xflux" else "filepath")
                             
                             with gr.Column():
@@ -431,9 +441,11 @@ class casdao_xflux_ui:
                         gr.update(visible=enable_xflux_funcitons), # neagetive prompt
                         gr.update(visible=enable_xflux_funcitons), # timesteps
                         gr.update(visible=enable_xflux_funcitons), # guidance
+                        gr.update(visble=True if (enable_xflux_funcitons or (not enable_xflux_funcitons and not offload)) else False), 
                         gr.update(visible=enable_xflux_funcitons), # control_type
                         gr.update(value=self.controlnet_checkpoints[1],choices=self.controlnet_checkpoints),
                         gr.update(maximum=1.0 if pipeline_type=="xflux" else 3.0), # control_weight
+                        gr.update(visible = not enable_xflux_funcitons),
                         gr.update(type="numpy" if pipeline_type=="xflux" else "filepath"), # control_image
                         gr.update(maximum=1.0 if pipeline_type=="xflux" else 3.0), # LoRA weight
                         gr.update(visible=enable_xflux_funcitons), # ip_options
@@ -446,13 +458,13 @@ class casdao_xflux_ui:
                     inputs=[pipeline_dropdown,model_checkpoint,device_dropdown,offload_checkbox],
                     outputs=[
                         pipeline_dropdown,model_checkpoint,
-                        is_ip_enable,neg_prompt,timestep_to_start_cfg,guidance,
-                        control_type,local_path,control_weight,controlnet_image,
+                        is_ip_enable,neg_prompt,timestep_to_start_cfg,guidance, is_contronet_enable,
+                        control_type,local_path,control_weight,conditioning_scale,controlnet_image,
                         lora_weight,ip_options
                     ]
                 )
                 
-                def update_model(pipeline_type, model_type, device, offload):
+                def update_model(pipeline_type, model_type, device, offload, control_enable):
                     gr.Info("切换Flux模型中...",duration=5)
                     flush()
                     del self.pipeline
@@ -477,15 +489,21 @@ class casdao_xflux_ui:
                         g_interactive=True,
                     
                     if self.gpu_mem_total < 25:
-                        return model_type, device, True, steps, gr.update(value=guidance,interactive=g_interactive)
+                        return model_type, device, True, steps, gr.update(value=guidance,interactive=g_interactive), gr.update(
+                            value = control_enable if pipeline_type=="xflux" or offload == False else False,
+                            visible=True if pipeline_type=="xflux" or offload == False else False,
+                        )
                     else: 
-                        return model_type, device, offload, steps, gr.update(value=guidance,interactive=g_interactive)
+                        return model_type, device, offload, steps, gr.update(value=guidance,interactive=g_interactive),gr.update(
+                            value = control_enable if pipeline_type=="xflux" or offload == False else False,
+                            visible=True if pipeline_type=="xflux" or offload == False else False,
+                        )
                 
                 gr.on(
                     triggers=[model_checkpoint.change,offload_checkbox.change],
                     fn=update_model,
-                    inputs=[pipeline_dropdown,model_checkpoint,device_dropdown,offload_checkbox],
-                    outputs=[model_checkpoint,device_dropdown,offload_checkbox,num_steps,true_gs],
+                    inputs=[pipeline_dropdown,model_checkpoint,device_dropdown,offload_checkbox,is_contronet_enable],
+                    outputs=[model_checkpoint,device_dropdown,offload_checkbox,num_steps,true_gs,is_contronet_enable],
                 )
                 
                 def update_options_open(is_enable):
@@ -585,7 +603,7 @@ class casdao_xflux_ui:
                         num_steps, seed, true_gs, 
                         is_ip_enable, ip_scale, neg_ip_scale, neg_prompt,
                         neg_image_prompt, timestep_to_start_cfg, 
-                        is_contronet_enable, control_type, control_weight,
+                        is_contronet_enable, control_type, control_weight, conditioning_scale,
                         is_lora_enable, lora_weight, 
                         local_path, lora_local_path, ip_local_path, output_dir,
                     ):
@@ -599,7 +617,8 @@ class casdao_xflux_ui:
                         controlnet_image, width, height, guidance,
                         num_steps, seed, true_gs, 
                         is_ip_enable, ip_scale, neg_ip_scale, neg_prompt,
-                        neg_image_prompt, timestep_to_start_cfg, is_contronet_enable, control_type, control_weight,
+                        neg_image_prompt, timestep_to_start_cfg, 
+                        is_contronet_enable, control_type, control_weight, conditioning_scale,
                         is_lora_enable, lora_weight, 
                         local_path, lora_local_path, ip_local_path, output_dir)
                     
@@ -618,7 +637,7 @@ class casdao_xflux_ui:
                         num_steps, seed, true_gs, 
                         is_ip_enable,ip_scale, neg_ip_scale, neg_prompt,
                         neg_image_prompt, timestep_to_start_cfg, 
-                        is_contronet_enable, control_type, control_weight,
+                        is_contronet_enable, control_type, control_weight, conditioning_scale,
                         is_lora_enable, lora_weight, 
                         local_path, lora_local_path, ip_local_path, output_dir
                 ]

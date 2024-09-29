@@ -215,7 +215,7 @@ class XFluxPipeline:
                         num_steps, seed, true_gs, 
                         is_ip_enable, ip_scale, neg_ip_scale, neg_prompt,
                         neg_image_prompt, timestep_to_start_cfg, 
-                        is_contronet_enable, control_type, control_weight,
+                        is_contronet_enable, control_type, control_weight, conditioning_scale,
                         is_lora_enable, lora_weight, local_path, lora_local_path, ip_local_path, output_dir,
                     ):
         if controlnet_image is not None and is_contronet_enable:
